@@ -9,6 +9,7 @@ GitHub Project Crawler: a C++ command-line application for exploring and collect
 | Role | Full Name | A-Number | USU Email |
 | --- | --- | --- | --- |
 | Team Leader | Brock McDermott | A02370118 | a02370118@usu.edu |
+| Jameson Irwin | A02309411 | a02309411@aggies.usu.edu | 
 
 ## Build Instructions
 
