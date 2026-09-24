@@ -34,7 +34,7 @@ std::string command_line_usage(std::string_view executable_name)
     return "Usage: " + std::string(executable_name) + " [SEARCH_QUERY]\n"
         "\n"
         "Collect up to 100 public repositories matching a GitHub search query.\n"
-        "The default query is stars:>0. Quote queries that contain spaces.\n"
+        "The default query is stars:>1000. Quote queries that contain spaces.\n"
         "\n"
         "Examples:\n"
         "  " + std::string(executable_name) + "\n"

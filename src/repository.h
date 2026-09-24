@@ -1,5 +1,4 @@
-#ifndef GITHUB_PROJECT_CRAWLER_REPOSITORY_H
-#define GITHUB_PROJECT_CRAWLER_REPOSITORY_H
+#pragma once
 
 #include <cstdint>
 #include <string>
@@ -15,5 +14,3 @@ struct Repository {
     std::string updated_at;
     std::string url;
 };
-
-#endif

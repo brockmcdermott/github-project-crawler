@@ -23,8 +23,10 @@ void test_defaults()
     const std::vector<std::string_view> arguments;
     const auto options = parse_command_line(arguments);
 
-    expect(options.search.query == "stars:>0", "default query is stars:>0");
+    expect(options.search.query == "stars:>1000", "default query is stars:>1000");
     expect(options.search.count == 100, "default repository count is 100");
+    expect(options.search.sort == "stars", "default sort is stars");
+    expect(options.search.order == "desc", "default order is descending");
     expect(!options.show_help, "default invocation does not show help");
 }
 

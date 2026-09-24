@@ -14,12 +14,12 @@ GitHub Project Crawler: a C++ command-line application for exploring and collect
 
 ## Build Instructions
 
-This project uses C++20, Clang/Clang++, CMake, Git, SSL-enabled `cpp-httplib`, and `nlohmann/json`.
+This project uses C++20, Clang/Clang++, CMake, Git, SSL-enabled `cpp-httplib`, and `nlohmann/json`. CMake downloads the required `nlohmann/json` version during configuration.
 
 On macOS with Homebrew, install the required tools and libraries with:
 
 ```bash
-brew install cmake cpp-httplib nlohmann-json
+brew install cmake cpp-httplib
 ```
 
 From the root of the repository, run:
@@ -51,7 +51,7 @@ Supply one quoted GitHub repository search query to change the search criteria:
 ./build/github_project_crawler 'language:c++ stars:>1000'
 ```
 
-The default search query is `stars:>0`. The repository count is fixed at 100 for Milestone 1.
+The default search query is `stars:>1000`. The repository count is fixed at 100 for Milestone 1.
 
 Until the teammate-owned API client, parser, and store are integrated, the executable validates and displays these options without contacting GitHub.
 
@@ -66,4 +66,4 @@ Never place a GitHub token in source code or commit it to the repository.
 
 ## Clean Checkout Notes
 
-A clean checkout should build successfully after Clang/Clang++, CMake, `cpp-httplib`, and `nlohmann/json` are installed and available to CMake.
+A clean checkout should build successfully after Clang/Clang++, CMake, and `cpp-httplib` are installed and available to CMake. Network access is required the first time CMake downloads `nlohmann/json`.
