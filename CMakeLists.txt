@@ -23,7 +23,13 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(nlohmann_json)
 
-find_package(httplib CONFIG REQUIRED)
+FetchContent_Declare(
+	httplib
+	GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+    	GIT_TAG v0.41.0
+    	GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(httplib)
 
 add_executable(github_project_crawler
     src/main.cpp
