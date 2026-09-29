@@ -34,6 +34,8 @@ FetchContent_MakeAvailable(httplib)
 add_executable(github_project_crawler
     src/main.cpp
     src/search_options.cpp
+    src/github_client.cpp
+
 )
 
 target_compile_features(github_project_crawler PRIVATE cxx_std_20)
