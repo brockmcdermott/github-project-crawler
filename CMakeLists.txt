@@ -35,6 +35,8 @@ add_executable(github_project_crawler
     src/main.cpp
     src/search_options.cpp
     src/github_client.cpp
+    src/repository_parser.cpp
+    src/repository_store.cpp
 
 )
 
