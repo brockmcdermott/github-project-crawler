@@ -37,6 +37,7 @@ add_executable(github_project_crawler
     src/github_client.cpp
     src/repository_parser.cpp
     src/repository_store.cpp
+    src/repository_analyzer.cpp
 
 )
 
@@ -59,19 +60,36 @@ include(CTest)
 
 if(BUILD_TESTING)
     add_executable(search_options_tests
-        tests/search_options_test.cpp
-        src/search_options.cpp
+            tests/search_options_test.cpp
+            src/search_options.cpp
     )
     target_compile_features(search_options_tests PRIVATE cxx_std_20)
     target_include_directories(search_options_tests PRIVATE src)
 
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         target_compile_options(search_options_tests PRIVATE
-            -Wall
-            -Wextra
-            -Wpedantic
+                -Wall
+                -Wextra
+                -Wpedantic
         )
     endif()
 
     add_test(NAME search_options COMMAND search_options_tests)
+
+    add_executable(repository_analyzer_tests
+            tests/repository_analyzer_test.cpp
+            src/repository_analyzer.cpp
+    )
+    target_compile_features(repository_analyzer_tests PRIVATE cxx_std_20)
+    target_include_directories(repository_analyzer_tests PRIVATE src)
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(repository_analyzer_tests PRIVATE
+                -Wall
+                -Wextra
+                -Wpedantic
+        )
+    endif()
+
+    add_test(NAME repository_analyzer COMMAND repository_analyzer_tests)
 endif()
