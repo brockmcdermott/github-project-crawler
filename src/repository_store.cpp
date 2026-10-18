@@ -25,7 +25,7 @@ void RepositoryStore::save(const std::vector<Repository>& repositories, const st
         out.push_back({
             {"owner", repo.owner},
             {"name", repo.name},
-            {"desciption", repo.description},
+            {"description", repo.description},
             {"stars", repo.stars},
             {"forks", repo.forks},
             {"language", repo.language},
