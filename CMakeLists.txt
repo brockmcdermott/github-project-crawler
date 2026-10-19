@@ -33,6 +33,7 @@ FetchContent_MakeAvailable(httplib)
 
 add_executable(github_project_crawler
     src/main.cpp
+    src/analysis_options.cpp
     src/search_options.cpp
     src/github_client.cpp
     src/repository_parser.cpp
@@ -92,4 +93,21 @@ if(BUILD_TESTING)
     endif()
 
     add_test(NAME repository_analyzer COMMAND repository_analyzer_tests)
+
+    add_executable(analysis_options_tests
+            tests/analysis_options_test.cpp
+            src/analysis_options.cpp
+    )
+    target_compile_features(analysis_options_tests PRIVATE cxx_std_20)
+    target_include_directories(analysis_options_tests PRIVATE src)
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(analysis_options_tests PRIVATE
+                -Wall
+                -Wextra
+                -Wpedantic
+        )
+    endif()
+
+    add_test(NAME analysis_options COMMAND analysis_options_tests)
 endif()

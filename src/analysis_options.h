@@ -3,7 +3,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <span>
 #include <string>
+#include <string_view>
 
 struct AnalysisOptions {
     std::filesystem::path input_path{"repositories.json"};
@@ -13,3 +15,12 @@ struct AnalysisOptions {
     std::size_t top_n{10};
     std::filesystem::path output_path{"selected.json"};
 };
+
+struct AnalysisCommandLineOptions {
+    AnalysisOptions analysis;
+    bool show_help{};
+};
+
+AnalysisCommandLineOptions parse_analysis_command_line(
+    std::span<const std::string_view> arguments);
+std::string analysis_command_line_usage(std::string_view executable_name);
