@@ -1,3 +1,6 @@
+#include "analysis_options.h"
+#include "data_loader.h"
+#include "repository_filter.h"
 #include "search_options.h"
 
 #include <iostream>
@@ -19,6 +22,32 @@ int main(int argc, char* argv[])
     }
 
     try {
+        if (!arguments.empty() && arguments.front() == "analyze") {
+            const std::span<const std::string_view> analysis_arguments(arguments);
+            const auto command_line = parse_analysis_command_line(
+                analysis_arguments.subspan(1));
+
+            if (command_line.show_help) {
+                std::cout << analysis_command_line_usage(executable_name);
+                return 0;
+            }
+
+            const AnalysisOptions& options = command_line.analysis;
+            const auto repositories = DataLoader::load_repositories(options.input_path);
+            const auto filtered = filter_repositories(repositories, options);
+            std::cout << "GitHub Project Crawler - Analysis\n"
+                      << "Dataset: " << options.input_path.string() << '\n'
+                      << "Repositories loaded: " << repositories.size() << '\n'
+                      << "Filter: stars >= " << options.min_stars << '\n'
+                      << "Language: "
+                      << (options.language.empty() ? "any" : options.language) << '\n'
+                      << "Sort: " << options.sort_key << " (descending)\n"
+                      << "Top N: " << options.top_n << '\n'
+                      << "Output: " << options.output_path.string() << '\n'
+                      << "Repositories matching filters: " << filtered.size() << '\n';
+            return 0;
+        }
+
         const auto command_line = parse_command_line(arguments);
 
         if (command_line.show_help) {
@@ -31,9 +60,16 @@ int main(int argc, char* argv[])
                   << "Repository count: " << command_line.search.count << '\n'
                   << "Collection pipeline is ready for client, parser, and store integration.\n";
     } catch (const std::invalid_argument& error) {
-        std::cerr << "Error: " << error.what() << "\n\n"
-                  << command_line_usage(executable_name);
+        std::cerr << "Error: " << error.what() << "\n\n";
+        if (!arguments.empty() && arguments.front() == "analyze") {
+            std::cerr << analysis_command_line_usage(executable_name);
+        } else {
+            std::cerr << command_line_usage(executable_name);
+        }
         return 2;
+    } catch (const std::runtime_error& error) {
+        std::cerr << "Error: " << error.what() << '\n';
+        return 1;
     }
 
     return 0;

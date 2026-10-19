@@ -1,0 +1,35 @@
+[
+  {
+    "owner": "alpha",
+    "name": "cpp-tools",
+    "description": "C++ developer tools",
+    "stars": 5000,
+    "forks": 400,
+    "language": "C++",
+    "size": 1200,
+    "updated_at": "2026-10-10T12:00:00Z",
+    "url": "https://github.com/alpha/cpp-tools"
+  },
+  {
+    "owner": "beta",
+    "name": "python-kit",
+    "description": "Python utilities",
+    "stars": 2500,
+    "forks": 300,
+    "language": "Python",
+    "size": 800,
+    "updated_at": "2026-10-12T08:30:00Z",
+    "url": "https://github.com/beta/python-kit"
+  },
+  {
+    "owner": "gamma",
+    "name": "small-cpp",
+    "description": "A smaller C++ project",
+    "stars": 500,
+    "forks": 25,
+    "language": "C++",
+    "size": 150,
+    "updated_at": "2026-09-01T09:00:00Z",
+    "url": "https://github.com/gamma/small-cpp"
+  }
+]
