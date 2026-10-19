@@ -1,4 +1,5 @@
 #include "analysis_options.h"
+#include "data_loader.h"
 #include "search_options.h"
 
 #include <iostream>
@@ -31,15 +32,16 @@ int main(int argc, char* argv[])
             }
 
             const AnalysisOptions& options = command_line.analysis;
+            const auto repositories = DataLoader::load_repositories(options.input_path);
             std::cout << "GitHub Project Crawler - Analysis\n"
                       << "Dataset: " << options.input_path.string() << '\n'
+                      << "Repositories loaded: " << repositories.size() << '\n'
                       << "Filter: stars >= " << options.min_stars << '\n'
                       << "Language: "
                       << (options.language.empty() ? "any" : options.language) << '\n'
                       << "Sort: " << options.sort_key << " (descending)\n"
                       << "Top N: " << options.top_n << '\n'
-                      << "Output: " << options.output_path.string() << '\n'
-                      << "Analysis options are valid.\n";
+                      << "Output: " << options.output_path.string() << '\n';
             return 0;
         }
 
@@ -62,6 +64,9 @@ int main(int argc, char* argv[])
             std::cerr << command_line_usage(executable_name);
         }
         return 2;
+    } catch (const std::runtime_error& error) {
+        std::cerr << "Error: " << error.what() << '\n';
+        return 1;
     }
 
     return 0;

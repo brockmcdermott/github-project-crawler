@@ -34,6 +34,7 @@ FetchContent_MakeAvailable(httplib)
 add_executable(github_project_crawler
     src/main.cpp
     src/analysis_options.cpp
+    src/data_loader.cpp
     src/search_options.cpp
     src/github_client.cpp
     src/repository_parser.cpp
@@ -110,4 +111,27 @@ if(BUILD_TESTING)
     endif()
 
     add_test(NAME analysis_options COMMAND analysis_options_tests)
+
+    add_executable(data_loader_tests
+            tests/data_loader_test.cpp
+            src/data_loader.cpp
+    )
+    target_compile_features(data_loader_tests PRIVATE cxx_std_20)
+    target_include_directories(data_loader_tests PRIVATE src)
+    target_compile_definitions(data_loader_tests PRIVATE
+            TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+    )
+    target_link_libraries(data_loader_tests PRIVATE
+            nlohmann_json::nlohmann_json
+    )
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(data_loader_tests PRIVATE
+                -Wall
+                -Wextra
+                -Wpedantic
+        )
+    endif()
+
+    add_test(NAME data_loader COMMAND data_loader_tests)
 endif()
