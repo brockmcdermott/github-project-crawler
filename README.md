@@ -64,6 +64,22 @@ export GITHUB_TOKEN='your-token-here'
 
 Never place a GitHub token in source code or commit it to the repository.
 
+## Milestone 2 Analysis
+
+Analyze the local dataset produced by Milestone 1 with:
+
+```bash
+./build/github_project_crawler analyze \
+  --input repositories.json \
+  --min-stars 1000 \
+  --language C++ \
+  --sort stars \
+  --top 5 \
+  --output selected.json
+```
+
+Run `./build/github_project_crawler analyze --help` for all analysis options. The Part 1 analysis path validates the options, loads the local JSON dataset, filters it by stars and language, and reports the loaded and matching counts. Sorting, top-N selection, reporting, and export are separate Milestone 2 components.
+
 ## Clean Checkout Notes
 
 A clean checkout should build successfully after Clang/Clang++, CMake, and `cpp-httplib` are installed and available to CMake. Network access is required the first time CMake downloads `nlohmann/json`.

@@ -35,6 +35,7 @@ add_executable(github_project_crawler
     src/main.cpp
     src/analysis_options.cpp
     src/data_loader.cpp
+    src/repository_filter.cpp
     src/search_options.cpp
     src/github_client.cpp
     src/repository_parser.cpp
@@ -134,4 +135,21 @@ if(BUILD_TESTING)
     endif()
 
     add_test(NAME data_loader COMMAND data_loader_tests)
+
+    add_executable(repository_filter_tests
+            tests/repository_filter_test.cpp
+            src/repository_filter.cpp
+    )
+    target_compile_features(repository_filter_tests PRIVATE cxx_std_20)
+    target_include_directories(repository_filter_tests PRIVATE src)
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(repository_filter_tests PRIVATE
+                -Wall
+                -Wextra
+                -Wpedantic
+        )
+    endif()
+
+    add_test(NAME repository_filter COMMAND repository_filter_tests)
 endif()

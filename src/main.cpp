@@ -1,5 +1,6 @@
 #include "analysis_options.h"
 #include "data_loader.h"
+#include "repository_filter.h"
 #include "search_options.h"
 
 #include <iostream>
@@ -33,6 +34,7 @@ int main(int argc, char* argv[])
 
             const AnalysisOptions& options = command_line.analysis;
             const auto repositories = DataLoader::load_repositories(options.input_path);
+            const auto filtered = filter_repositories(repositories, options);
             std::cout << "GitHub Project Crawler - Analysis\n"
                       << "Dataset: " << options.input_path.string() << '\n'
                       << "Repositories loaded: " << repositories.size() << '\n'
@@ -41,7 +43,8 @@ int main(int argc, char* argv[])
                       << (options.language.empty() ? "any" : options.language) << '\n'
                       << "Sort: " << options.sort_key << " (descending)\n"
                       << "Top N: " << options.top_n << '\n'
-                      << "Output: " << options.output_path.string() << '\n';
+                      << "Output: " << options.output_path.string() << '\n'
+                      << "Repositories matching filters: " << filtered.size() << '\n';
             return 0;
         }
 
