@@ -10,7 +10,7 @@ GitHub Project Crawler: a C++ command-line application for exploring and collect
 | --- | --- | --- | --- |
 | Team Leader | Brock McDermott | A02370118 | a02370118@usu.edu |
 | Programmer | Jameson Irwin | A02309411 | a02309411@aggies.usu.edu |
-| Programmer | Kevin Silver | A02416055 | a02416065@usu.edu |
+| Programmer | Kevin Silver | A02416055 | a02416055@usu.edu |
 
 ## Build Instructions
 
@@ -66,7 +66,11 @@ Never place a GitHub token in source code or commit it to the repository.
 
 ## Milestone 2 Analysis
 
-Analyze the local dataset produced by Milestone 1 with:
+Analysis mode works on a local .json file dataset. It does not make any GitHub API calls.
+The process order is:
+Load -> Filter -> Sort -> Top N -> Report -> Export
+
+Example:
 
 ```bash
 ./build/github_project_crawler analyze \
@@ -78,7 +82,107 @@ Analyze the local dataset produced by Milestone 1 with:
   --output selected.json
 ```
 
-Run `./build/github_project_crawler analyze --help` for all analysis options. The Part 1 analysis path validates the options, loads the local JSON dataset, filters it by stars and language, and reports the loaded and matching counts. Sorting, top-N selection, reporting, and export are separate Milestone 2 components.
+### Options
+```text
+  --input PATH       Dataset path (default: repositories.json)
+  --min-stars N      Keep repositories with at least N stars (default: 0)
+  --language NAME    Keep only repositories using NAME
+  --sort KEY         Sort by stars, forks, or updated (default: stars)
+  --top N            Select at most N repositories (default: 10)
+  --output PATH      Export path (default: selected.json)
+  -h, --help         Show this help message
+```
+
+### How selection works
+
+1. The dataset is loaded into `Repository` objects.
+2. Repositories are then filtered out based on criteria like minimum stars, or language.
+3. The remaining repositories are sorted in descending order by the chosen key ties broken by the owner then repo name in ascending order.
+4. The first N results are kept. All are kept if there are fewer than N matches.
+
+### Output
+
+The terminal gives a tabular summary of results in the following format. 
+```text
+GitHub Project Crawler - Analysis
+Dataset: sample.json
+Repositories loaded: 5
+Filter: stars >= 0
+Language: any
+Sort: stars (descending)
+Top N: 10
+Output: selected.json
+Repositories Selected: 5
+  1. amy/beta                                       | stars:     5000 | forks:      300 | C++        | updated: 2026-10-10T08:30:00Z
+  2. zed/alpha                                      | stars:     5000 | forks:      800 | C++        | updated: 2026-10-01T12:00:00Z
+  3. bob/gamma                                      | stars:     2500 | forks:      300 | Python     | updated: 2026-09-15T20:45:00Z
+  4. cat/delta                                      | stars:     1200 | forks:       50 | (none)     | updated: 2026-10-18T03:10:00Z
+  5. dan/epsilon                                    | stars:      800 | forks:      120 | Rust       | updated: 2026-08-20T16:00:00Z
+Exported 5 repositories to selected.json
+```
+The same selected repos in that order are written to json as follows
+```json
+[
+  {
+    "description": "Ties with alpha on stars",
+    "forks": 300,
+    "language": "C++",
+    "name": "beta",
+    "owner": "amy",
+    "size": 450,
+    "stars": 5000,
+    "updated_at": "2026-10-10T08:30:00Z",
+    "url": "https://github.com/amy/beta"
+  },
+  {
+    "description": "First repo",
+    "forks": 800,
+    "language": "C++",
+    "name": "alpha",
+    "owner": "zed",
+    "size": 1200,
+    "stars": 5000,
+    "updated_at": "2026-10-01T12:00:00Z",
+    "url": "https://github.com/zed/alpha"
+  },
+  {
+    "description": "A Python project",
+    "forks": 300,
+    "language": "Python",
+    "name": "gamma",
+    "owner": "bob",
+    "size": 90,
+    "stars": 2500,
+    "updated_at": "2026-09-15T20:45:00Z",
+    "url": "https://github.com/bob/gamma"
+  },
+  {
+    "description": "",
+    "forks": 50,
+    "language": "",
+    "name": "delta",
+    "owner": "cat",
+    "size": 15,
+    "stars": 1200,
+    "updated_at": "2026-10-18T03:10:00Z",
+    "url": "https://github.com/cat/delta"
+  },
+  {
+    "description": "A Rust project",
+    "forks": 120,
+    "language": "Rust",
+    "name": "epsilon",
+    "owner": "dan",
+    "size": 700,
+    "stars": 800,
+    "updated_at": "2026-08-20T16:00:00Z",
+    "url": "https://github.com/dan/epsilon"
+  }
+]
+```
+
+if nothing matches, the output file contains "[]"
+
 
 ## Clean Checkout Notes
 

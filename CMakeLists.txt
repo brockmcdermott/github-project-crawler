@@ -41,6 +41,8 @@ add_executable(github_project_crawler
     src/repository_parser.cpp
     src/repository_store.cpp
     src/repository_analyzer.cpp
+    src/reporter.cpp
+    src/json_exporter.cpp
 
 )
 
@@ -152,4 +154,88 @@ if(BUILD_TESTING)
     endif()
 
     add_test(NAME repository_filter COMMAND repository_filter_tests)
+        add_executable(reporter_tests
+            tests/reporter_test.cpp
+            src/reporter.cpp
+    )
+    target_compile_features(reporter_tests PRIVATE cxx_std_20)
+    target_include_directories(reporter_tests PRIVATE src)
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(reporter_tests PRIVATE
+                -Wall
+                -Wextra
+                -Wpedantic
+        )
+    endif()
+
+    add_test(NAME reporter COMMAND reporter_tests)
+
+    add_executable(json_exporter_tests
+            tests/json_exporter_test.cpp
+            src/json_exporter.cpp
+    )
+    target_compile_features(json_exporter_tests PRIVATE cxx_std_20)
+    target_include_directories(json_exporter_tests PRIVATE src)
+    target_link_libraries(json_exporter_tests PRIVATE
+            nlohmann_json::nlohmann_json
+    )
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(json_exporter_tests PRIVATE
+                -Wall
+                -Wextra
+                -Wpedantic
+        )
+    endif()
+
+    add_test(NAME json_exporter COMMAND json_exporter_tests)
+    
+    
+    add_executable(analysis_integration_tests
+            tests/analysis_int_test.cpp
+            src/reporter.cpp
+            src/json_exporter.cpp
+            src/repository_filter.cpp
+            src/repository_analyzer.cpp
+    )
+    target_compile_features(analysis_integration_tests PRIVATE cxx_std_20)
+    target_include_directories(analysis_integration_tests PRIVATE src)
+    target_link_libraries(analysis_integration_tests PRIVATE
+            nlohmann_json::nlohmann_json
+    )
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(analysis_integration_tests PRIVATE
+                -Wall
+                -Wextra
+                -Wpedantic
+        )
+    endif()
+
+    add_test(NAME analysis_integration COMMAND analysis_integration_tests)
+    
+    
+    add_executable(analysis_e2e_tests
+            tests/analysis_e2e_test.cpp
+    )
+    target_compile_features(analysis_e2e_tests PRIVATE cxx_std_20)
+    target_compile_definitions(analysis_e2e_tests PRIVATE
+            CRAWLER_EXE="$<TARGET_FILE:github_project_crawler>"
+            TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+    )
+    target_link_libraries(analysis_e2e_tests PRIVATE
+            nlohmann_json::nlohmann_json
+    )
+    add_dependencies(analysis_e2e_tests github_project_crawler)
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(analysis_e2e_tests PRIVATE
+                -Wall
+                -Wextra
+                -Wpedantic
+        )
+    endif()
+
+    add_test(NAME analysis_e2e COMMAND analysis_e2e_tests)
 endif()
