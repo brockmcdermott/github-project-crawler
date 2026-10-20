@@ -4,6 +4,7 @@
 #include "search_options.h"
 #include "reporter.h"
 #include "repository_analyzer.h"
+#include "json_exporter.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -36,13 +37,15 @@ int main(int argc, char* argv[])
 
             const AnalysisOptions& options = command_line.analysis;
             const auto repositories = DataLoader::load_repositories(options.input_path);
-            const auto filtered = filter_repositories(repositories, options);
-            auto selected = filtered;
+            
+            auto selected = filter_repositories(repositories, options);
             sort_repositories(selected, options.sort_key);
             select_top_n(selected, options.top_n);
             
             Reporter::print_summary(options, repositories.size(), selected.size());
             Reporter::print_rows(selected);
+            JsonExporter::save(selected, options.output_path);
+            std::cout << std::format("Exported {} repositories to {}\n", selected.size(), options.output_path.string());
             
             return 0;
         }
