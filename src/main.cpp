@@ -2,6 +2,8 @@
 #include "data_loader.h"
 #include "repository_filter.h"
 #include "search_options.h"
+#include "reporter.h"
+#include "repository_analyzer.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -35,16 +37,13 @@ int main(int argc, char* argv[])
             const AnalysisOptions& options = command_line.analysis;
             const auto repositories = DataLoader::load_repositories(options.input_path);
             const auto filtered = filter_repositories(repositories, options);
-            std::cout << "GitHub Project Crawler - Analysis\n"
-                      << "Dataset: " << options.input_path.string() << '\n'
-                      << "Repositories loaded: " << repositories.size() << '\n'
-                      << "Filter: stars >= " << options.min_stars << '\n'
-                      << "Language: "
-                      << (options.language.empty() ? "any" : options.language) << '\n'
-                      << "Sort: " << options.sort_key << " (descending)\n"
-                      << "Top N: " << options.top_n << '\n'
-                      << "Output: " << options.output_path.string() << '\n'
-                      << "Repositories matching filters: " << filtered.size() << '\n';
+            auto selected = filtered;
+            sort_repositories(selected, options.sort_key);
+            select_top_n(selected, options.top_n);
+            
+            Reporter::print_summary(options, repositories.size(), selected.size());
+            Reporter::print_rows(selected);
+            
             return 0;
         }
 
@@ -59,6 +58,8 @@ int main(int argc, char* argv[])
                   << "Search query: " << command_line.search.query << '\n'
                   << "Repository count: " << command_line.search.count << '\n'
                   << "Collection pipeline is ready for client, parser, and store integration.\n";
+                  
+        
     } catch (const std::invalid_argument& error) {
         std::cerr << "Error: " << error.what() << "\n\n";
         if (!arguments.empty() && arguments.front() == "analyze") {
