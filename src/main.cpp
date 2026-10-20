@@ -10,6 +10,9 @@
 #include <stdexcept>
 #include <string_view>
 #include <vector>
+#include "github_client.h"
+#include "repository_parser.h"
+#include "repository_store.h"
 
 int main(int argc, char* argv[])
 {
@@ -59,10 +62,19 @@ int main(int argc, char* argv[])
         }
 
         std::cout << "GitHub Project Crawler\n"
-                  << "Search query: " << command_line.search.query << '\n'
-                  << "Repository count: " << command_line.search.count << '\n'
-                  << "Collection pipeline is ready for client, parser, and store integration.\n";
+  << "Search query: " << command_line.search.query << '\n'
+  << "Repository count: " << command_line.search.count << '\n';
 
+        const GitHubClient client;
+        const auto body = client.search_repositories(command_line.search);
+        if (!body) {
+            return 1;
+        }
+
+        const auto repositories = RepositoryParser::parse(*body);
+        RepositoryStore::print(repositories);
+        RepositoryStore::save(repositories, "repositories.json");
+        std::cout << "Saved " << repositories.size() << " repositories to repositories.json\n";
     } catch (const std::invalid_argument& error) {
         std::cerr << "Error: " << error.what() << "\n\n";
         if (!arguments.empty() && arguments.front() == "analyze") {
@@ -74,7 +86,11 @@ int main(int argc, char* argv[])
     } catch (const std::runtime_error& error) {
         std::cerr << "Error: " << error.what() << '\n';
         return 1;
+    } catch (const std::exception& error) {
+        std::cerr << "Error: " << error.what() << '\n';
+        return 1;
     }
+
 
     return 0;
 }
