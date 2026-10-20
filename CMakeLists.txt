@@ -154,7 +154,7 @@ if(BUILD_TESTING)
     endif()
 
     add_test(NAME repository_filter COMMAND repository_filter_tests)
-        add_executable(reporter_tests
+    add_executable(reporter_tests
             tests/reporter_test.cpp
             src/reporter.cpp
     )
@@ -190,8 +190,8 @@ if(BUILD_TESTING)
     endif()
 
     add_test(NAME json_exporter COMMAND json_exporter_tests)
-    
-    
+
+
     add_executable(analysis_integration_tests
             tests/analysis_int_test.cpp
             src/reporter.cpp
@@ -214,8 +214,8 @@ if(BUILD_TESTING)
     endif()
 
     add_test(NAME analysis_integration COMMAND analysis_integration_tests)
-    
-    
+
+
     add_executable(analysis_e2e_tests
             tests/analysis_e2e_test.cpp
     )

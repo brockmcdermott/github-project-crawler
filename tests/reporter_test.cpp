@@ -139,7 +139,7 @@ namespace {
                    selected[0].stars == copy[0].stars,
                "reporter leaves the selection unchanged");
     }
-} 
+}
 
 int main()
 {

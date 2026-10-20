@@ -101,7 +101,7 @@ namespace {
         } catch (const std::runtime_error&) {
         }
     }
-} 
+}
 
 int main()
 {
