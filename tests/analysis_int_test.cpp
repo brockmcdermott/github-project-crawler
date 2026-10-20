@@ -5,6 +5,7 @@
 #include "repository_analyzer.h"
 #include "repository_filter.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -181,7 +182,7 @@ namespace {
                "file on disk equals the selected collection");
         std::filesystem::remove(path);
     }
-} 
+}
 
 int main()
 {

@@ -102,7 +102,7 @@ Example:
 
 ### Output
 
-The terminal gives a tabular summary of results in the following format. 
+The terminal gives a tabular summary of results in the following format.
 ```text
 GitHub Project Crawler - Analysis
 Dataset: sample.json

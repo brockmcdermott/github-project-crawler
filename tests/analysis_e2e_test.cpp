@@ -1,5 +1,6 @@
 #include <nlohmann/json.hpp>
 
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -211,7 +212,7 @@ namespace {
         const auto bad_out = run_analyze("--input \"" + fixture_path() + "\"", "/nonexistent_dir_for_test/out.json");
         expect(bad_out.exit_code != 0, "unwritable output path fails");
     }
-    
+
     void test_exact_orders_on_fixture()
     {
         const auto out = fs::temp_directory_path() / "analysis_e2e_exact.json";
@@ -236,7 +237,7 @@ namespace {
                "top N truncates on fixture");
         fs::remove(out);
     }
-} 
+}
 
 int main()
 {
