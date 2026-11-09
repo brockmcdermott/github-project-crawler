@@ -36,7 +36,7 @@ The proposed design should preserve this behavior while replacing loosely relate
 
 These names are a starting point, not an instruction to add classes immediately. The final design document must explain why each class exists and how it improves the current system.
 
-## Part 1: Brock McDermott - Requirements and Data Acquisition Design
+## Part 1: Requirements and Data Acquisition Design
 
 ### Responsibilities
 
@@ -83,7 +83,7 @@ These names are a starting point, not an instruction to add classes immediately.
 - Network access, JSON conversion, and application coordination have separate responsibilities.
 - Error behavior is included in the requirements.
 
-## Part 2: Jameson Irwin - Analysis Architecture, UML, and Strategy Pattern
+## Part 2: Analysis Architecture, UML, and Strategy Pattern
 
 ### Responsibilities
 
@@ -127,7 +127,7 @@ These names are a starting point, not an instruction to add classes immediately.
 - Sorting remains deterministic and selectable at runtime.
 - Analysis logic remains independent from printing and exporting.
 
-## Part 3: Kevin Silver - Application Coordination, Output Design, and Test Plan
+## Part 3: Application Coordination, Output Design, and Test Plan
 
 ### Responsibilities
 
@@ -189,21 +189,21 @@ Once these contracts are agreed on, all three students can write in parallel.
 
 ## Integration Order
 
-1. Brock publishes the initial requirement IDs and acquisition interfaces.
+1. The Part 1 contributor publishes the initial requirement IDs and acquisition interfaces.
 2. All three students write their assigned sections in parallel using the agreed names.
-3. Jameson adds the full UML and Strategy-pattern explanation.
-4. Kevin assembles the report and adds the test and traceability tables.
-5. Brock checks every requirement against the final class design and planned tests.
+3. The Part 2 contributor adds the full UML and Strategy-pattern explanation.
+4. The Part 3 contributor assembles the report and adds the test and traceability tables.
+5. The Part 1 contributor checks every requirement against the final class design and planned tests.
 6. The entire team reviews the report before it is submitted as `design.md`.
 
 ## Rubric Coverage
 
-| Grading Category | Primary Owner | Supporting Owners | Evidence in `design.md` |
-| --- | --- | --- | --- |
-| Requirements analysis - 5 points | Brock | Jameson, Kevin | Numbered, testable requirements table |
-| System design - 12 points | Jameson | Brock, Kevin | Class descriptions, declarations, UML, and interactions |
-| Test design - 8 points | Kevin | Brock, Jameson | Planned tests and requirement coverage table |
-| Optional Strategy bonus - 5 design points | Jameson | Brock, Kevin | Problem, participants, selection, and expected improvement |
+| Grading Category | Work Part | Evidence in `design.md` |
+| --- | --- | --- |
+| Requirements analysis - 5 points | Part 1 | Numbered, testable requirements table |
+| System design - 12 points | Parts 1, 2, and 3 | Class descriptions, declarations, UML, and interactions |
+| Test design - 8 points | Part 3 | Planned tests and requirement coverage table |
+| Optional Strategy bonus - 5 design points | Part 2 | Problem, participants, selection, and expected improvement |
 
 ## Final Checklist
 
