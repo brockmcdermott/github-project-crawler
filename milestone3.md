@@ -34,7 +34,15 @@ The proposed design should preserve this behavior while replacing loosely relate
 - `RepositoryExporter`: writes the selected collection to JSON.
 - `Repository`: the existing repository value object.
 
-These names are a starting point, not an instruction to add classes immediately. The final design document must explain why each class exists and how it improves the current system.
+These names are the shared design contract used by the `design.md` outline. The final design document must explain why each class exists and how it improves the current system.
+
+## Current Part Selections
+
+- Part 1: Jameson Irwin.
+- Part 2: Brock McDermott.
+- Part 3: Unassigned.
+
+Part 1 and Part 2 can proceed at the same time because the requirement IDs, class names, and interface boundaries are fixed in `design.md`.
 
 ## Part 1: Requirements and Data Acquisition Design
 
@@ -174,27 +182,30 @@ These names are a starting point, not an instruction to add classes immediately.
 - Reporter and exporter tests verify identical repository identity, order, and count.
 - The report describes planned future tests and does not claim unexecuted results.
 
-## Shared Interfaces to Agree On First
+## Shared Contract
 
-Before writing sections independently, the team should agree on:
+Use the following decisions throughout all three parts:
 
-1. Final requirement IDs and wording.
-2. Final class names and ownership relationships.
-3. Whether sources and exporters are represented by abstract interfaces.
-4. The exact `SortStrategy` interface and strategy-selection mechanism.
-5. Which class owns each dependency and selected repository vector.
-6. Diagram notation and naming conventions.
+1. Requirement IDs are `R1` through `R10` as defined in `design.md`; do not renumber them.
+2. Repository acquisition uses `IRepositorySource`, implemented by `GitHubRepositorySource` and `JsonRepositorySource`.
+3. JSON dataset conversion belongs to `RepositoryJsonCodec`; GitHub response conversion remains in `GitHubResponseParser` because the schemas differ.
+4. Output uses `RepositoryReporter` and `IRepositoryExporter`; `JsonRepositoryExporter` implements the exporter interface.
+5. Sorting uses `SortStrategy`, implemented by `StarsSortStrategy`, `ForksSortStrategy`, and `UpdatedSortStrategy`.
+6. `RepositoryAnalyzer` performs Filter -> Sort -> Top N and receives a strategy through its public interface.
+7. `CrawlerApplication` coordinates workflows but does not implement networking, parsing, analysis algorithms, reporting, or serialization.
+8. UML uses Mermaid `classDiagram`; interactions use Mermaid `sequenceDiagram`.
+9. Solid relationship arrows represent inheritance or composition as labeled in the prose; dashed arrows represent ordinary usage dependencies.
 
-Once these contracts are agreed on, all three students can write in parallel.
+These contracts allow all three students to write in parallel.
 
 ## Integration Order
 
-1. The Part 1 contributor publishes the initial requirement IDs and acquisition interfaces.
-2. All three students write their assigned sections in parallel using the agreed names.
-3. The Part 2 contributor adds the full UML and Strategy-pattern explanation.
-4. The Part 3 contributor assembles the report and adds the test and traceability tables.
-5. The Part 1 contributor checks every requirement against the final class design and planned tests.
-6. The entire team reviews the report before it is submitted as `design.md`.
+1. Jameson and Brock write Parts 1 and 2 in parallel using the shared `design.md` contract.
+2. The Part 3 contributor writes application/output design and the test plan.
+3. Brock completes the full UML and Strategy-pattern explanation.
+4. The Part 3 contributor assembles the test and traceability tables.
+5. Jameson checks every requirement against the final class design and planned tests.
+6. The entire team removes outline notes and reviews the report before submission.
 
 ## Rubric Coverage
 
