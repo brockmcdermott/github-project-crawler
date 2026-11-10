@@ -366,9 +366,7 @@ Sources and exporters are interfaces because the system already has multiple acq
 
 ### 2.6 Analysis Interaction
 
-<!-- PART 2 - BROCK
-TODO: Refine this sequence and explain how it proves Filter -> Sort -> Top N and shared output selection.
--->
+Figure 2 traces one analysis command. `CrawlerApplication` first requests normalized values from `JsonRepositorySource`; GitHub collection is not part of this path. The application selects one concrete strategy from `AnalysisOptions.sort_key` and passes it to `RepositoryAnalyzer`. The analyzer owns the three ordered transformation steps and returns one selected vector. The application then passes that same const collection to both output components.
 
 ```mermaid
 sequenceDiagram
@@ -382,15 +380,24 @@ sequenceDiagram
 
     User->>App: analysis command
     App->>Source: load()
+    Source->>Source: decode normalized JSON
     Source-->>App: vector<Repository>
+    Note over App,Strategy: Select strategy from options.sort_key
     App->>Analyzer: analyze(repositories, options, strategy)
-    Analyzer->>Analyzer: filter
+    Analyzer->>Analyzer: filter by min stars and language
     Analyzer->>Strategy: sort(filtered repositories)
+    Strategy-->>Analyzer: deterministic descending order
     Analyzer->>Analyzer: top N
     Analyzer-->>App: selected repositories
     App->>Reporter: print same selection
     App->>Exporter: save same selection
+    Reporter-->>User: summary and rows
+    Exporter-->>App: export completed
 ```
+
+This interaction enforces the required order because the strategy is invoked only after filtering and top-N resizing occurs only after the strategy returns. `RepositoryReporter` and `JsonRepositoryExporter` never invoke `RepositoryAnalyzer` themselves, so neither can accidentally apply different filters or ordering. Both receive the exact vector returned by `analyze()`, preserving repository identity, order, and count for R9.
+
+The source completes loading before analysis begins. If loading throws a missing-file, malformed-JSON, or schema error, control returns to `CrawlerApplication`, which reports failure and does not call the analyzer or output components. Similarly, an export failure is returned after reporting but is not described as a successful export. These boundaries support the error behavior in R10 while keeping error presentation in the application layer.
 
 ### 2.7 Application Coordination and Output Design
 
@@ -447,14 +454,41 @@ TODO: Explain component vs integration tests, why fakes avoid live GitHub, and w
 
 ## Optional Bonus: Strategy Pattern
 
-<!-- PART 2 - BROCK
-TODO: Write the bonus explanation with four explicit parts:
-1. Problem: sort behavior varies while analysis workflow stays fixed.
-2. Pattern: Strategy encapsulates each sorting algorithm behind one interface.
-3. Participants: RepositoryAnalyzer, SortStrategy, and three concrete strategies.
-4. Improvement: runtime selection, isolated tests, and extension without changing analyzer control flow.
-Explain why a conditional inside RepositoryAnalyzer would be more tightly coupled.
--->
+### Design Problem
+
+The analysis workflow is stable--Filter, Sort, then Top N--but the sorting algorithm varies at runtime. Stars, forks, and updated time use different primary fields while sharing descending order and deterministic owner/name tie-breaking. Placing a chain of sort-key conditionals and all comparator implementations inside `RepositoryAnalyzer` would give that class multiple reasons to change. Adding a new sort mode would require editing the analyzer's control flow even though filtering and top-N behavior remain unchanged.
+
+### Selected Pattern and Participants
+
+The proposed design applies the Strategy pattern to this variation point. `SortStrategy` defines the sorting contract, and `StarsSortStrategy`, `ForksSortStrategy`, and `UpdatedSortStrategy` encapsulate the concrete algorithms. `RepositoryAnalyzer` is the context: it receives a strategy through `analyze()` and delegates only the ordering step. `CrawlerApplication` is responsible for selecting the concrete strategy from the already validated `sort_key`.
+
+```cpp
+std::unique_ptr<SortStrategy> make_sort_strategy(std::string_view sort_key)
+{
+    if (sort_key == "stars") {
+        return std::make_unique<StarsSortStrategy>();
+    }
+    if (sort_key == "forks") {
+        return std::make_unique<ForksSortStrategy>();
+    }
+    if (sort_key == "updated") {
+        return std::make_unique<UpdatedSortStrategy>();
+    }
+    throw std::invalid_argument("unsupported sort key");
+}
+```
+
+The selection helper is shown to clarify object creation; the design-pattern benefit comes from polymorphic use after selection. Once created, the analyzer communicates only through `SortStrategy::sort()` and does not inspect the key or concrete type.
+
+### Collaboration
+
+For an analysis command, `CrawlerApplication` chooses one strategy and passes it by reference with the loaded repositories and `AnalysisOptions`. `RepositoryAnalyzer` filters into a working vector, invokes the strategy on that vector, then applies top N. The concrete strategy compares its primary field and applies the same owner/name tie-breaking rule. It returns control without printing, exporting, or changing the original loaded vector.
+
+### Expected Improvement
+
+Strategy keeps `RepositoryAnalyzer` focused on workflow order and supports the open/closed principle: a future sort mode can be added as another `SortStrategy` implementation without changing analyzer logic. Each strategy can be tested directly with ties and boundary data, while analyzer tests can use a fake strategy to verify delegation and Filter -> Sort -> Top N ordering. Runtime selection remains explicit, and the three current algorithms share one interface that is visible in the UML model.
+
+The pattern introduces several small classes and one virtual call, but repository sorting already represents a real family of user-selectable algorithms. That variation and the need for isolated deterministic tests justify the additional abstraction. Applying Strategy to filtering or reporting would not currently provide the same benefit because those behaviors do not have multiple runtime-selectable implementations in the requirements.
 
 ## Final Review Checklist
 
