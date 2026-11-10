@@ -169,15 +169,53 @@ sequenceDiagram
 
 ### 2.4 Analysis Architecture
 
-<!-- PART 2 - BROCK
-TODO:
-1. Explain RepositoryAnalyzer and why it owns workflow order but not output.
-2. Explain filter behavior and inclusive minimum-star/language rules.
-3. Explain top-N behavior and edge cases.
-4. Explain SortStrategy and all three concrete strategies.
-5. Include representative declarations for StarsSortStrategy, ForksSortStrategy, and UpdatedSortStrategy.
-6. Map the analysis classes explicitly to R6-R8.
--->
+`RepositoryAnalyzer` is a stateless application service that transforms a loaded collection into the repositories selected by `AnalysisOptions`. It owns the required analysis sequence--Filter, Sort, then Top N--but it does not load files, print rows, or export JSON. Keeping output outside the analyzer allows the same selected vector to be passed to both `RepositoryReporter` and `IRepositoryExporter`, which supports R9 without duplicating analysis logic.
+
+The analyzer first copies matching `Repository` values into a result vector. A repository matches when its star count is greater than or equal to `min_stars` and its language equals the requested language when a language was supplied. An empty language option means any language. The inclusive star comparison preserves repositories exactly on the requested threshold, as required by R6.
+
+After filtering, the analyzer delegates ordering to the supplied `SortStrategy`. Each strategy sorts its primary value in descending order and uses owner followed by repository name in ascending order when primary values tie. The common strategy interface allows runtime selection without placing a sort-key conditional inside the analyzer. The analyzer then applies top N by resizing only when the result contains more than `top_n` entries. If fewer than N remain, all matches are returned; an empty input or zero matches returns an empty vector. Command-line validation rejects a zero `top_n` before analysis begins.
+
+Neither `RepositoryAnalyzer` nor the concrete strategies require persistent data members. They are behavior objects: all input arrives through method parameters, and each call produces a result without retaining repositories between runs. This makes repeated calls independent and permits one strategy object to be reused safely.
+
+Representative declarations are:
+
+```cpp
+class StarsSortStrategy final : public SortStrategy {
+public:
+    void sort(std::vector<Repository>& repositories) const override;
+};
+
+class ForksSortStrategy final : public SortStrategy {
+public:
+    void sort(std::vector<Repository>& repositories) const override;
+};
+
+class UpdatedSortStrategy final : public SortStrategy {
+public:
+    void sort(std::vector<Repository>& repositories) const override;
+};
+
+class RepositoryAnalyzer {
+public:
+    std::vector<Repository> analyze(
+        const std::vector<Repository>& repositories,
+        const AnalysisOptions& options,
+        const SortStrategy& sort_strategy) const;
+
+private:
+    bool matches_filters(
+        const Repository& repository,
+        const AnalysisOptions& options) const;
+};
+```
+
+`RepositoryAnalyzer::analyze()` accepts its input by const reference and returns a separate vector, so analysis does not reorder or truncate the loaded dataset. `SortStrategy::sort()` intentionally accepts the internal result vector by mutable reference because sorting is the strategy's sole responsibility. Updated timestamps use the same GitHub ISO 8601 format, so descending string comparison produces descending chronological order for this project.
+
+| Requirement | Analysis design support |
+| --- | --- |
+| R6 | `matches_filters()` applies inclusive minimum stars and optional exact language matching. |
+| R7 | The three `SortStrategy` implementations provide descending, deterministic runtime-selectable ordering. |
+| R8 | `analyze()` performs top-N truncation only after filtering and sorting and retains all values when fewer than N remain. |
 
 ### 2.5 Class Structure and Relationships
 
