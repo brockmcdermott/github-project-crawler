@@ -40,7 +40,7 @@ These names are the shared design contract used by the `design.md` outline. The 
 
 - Part 1: Jameson Irwin.
 - Part 2: Brock McDermott.
-- Part 3: Unassigned.
+- Part 3: Kevin Silver.
 
 Part 1 and Part 2 can proceed at the same time because the requirement IDs, class names, and interface boundaries are fixed in `design.md`.
 
@@ -52,7 +52,7 @@ Each work area is marked with HTML comments so contributors can find their secti
 
 - Part 1 uses comments beginning with `PART 1 - JAMESON` in the Overview, Requirements, Data Acquisition Design, and Collection Interaction sections.
 - Part 2 uses comments beginning with `PART 2 - BROCK` in the Analysis Architecture, Class Structure, Relationship Explanation, Analysis Interaction, and Strategy Pattern sections.
-- Part 3 uses comments beginning with `PART 3 - UNASSIGNED` in the Application/Output Design and Test Design sections.
+- Part 3 uses comments beginning with `PART 3 - KEVIN` in the Application/Output Design and Test Design sections.
 
 The outline already provides:
 

@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | Part 1 | Jameson Irwin | Overview, Requirements, Data Acquisition Design, Collection Interaction |
 | Part 2 | Brock McDermott | Analysis Architecture, UML, Analysis Interaction, Strategy Pattern |
-| Part 3 | Unassigned | Application/Output Design, Test Design, Traceability, Final Editing |
+| Part 3 | Kevin Silver | Application/Output Design, Test Design, Traceability, Final Editing |
 
 The requirement IDs and class/interface names below are fixed coordination points. Contributors may improve explanations and declarations, but should not rename or renumber shared items without agreement from the team.
 
@@ -270,7 +270,7 @@ sequenceDiagram
 
 ### 2.7 Application Coordination and Output Design
 
-<!-- PART 3 - UNASSIGNED
+<!-- PART 3 - KEVIN
 TODO:
 1. Describe CrawlerApplication, RepositoryReporter, IRepositoryExporter, and JsonRepositoryExporter.
 2. Show how collection and analysis enter separate private workflows.
@@ -281,7 +281,7 @@ TODO:
 
 ## 3. Test Design
 
-<!-- PART 3 - UNASSIGNED
+<!-- PART 3 - KEVIN
 TODO: Replace/add rows as needed. Every test needs target, setup, and explicit expected result. These are planned tests, not claimed execution results.
 -->
 
@@ -304,7 +304,7 @@ TODO: Replace/add rows as needed. Every test needs target, setup, and explicit e
 
 ### 3.1 Coverage and Evaluation Plan
 
-<!-- PART 3 - UNASSIGNED
+<!-- PART 3 - KEVIN
 TODO: Explain component vs integration tests, why fakes avoid live GitHub, and what evidence the final milestone will record.
 -->
 
