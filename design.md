@@ -219,24 +219,65 @@ private:
 
 ### 2.5 Class Structure and Relationships
 
-<!-- PART 2 - BROCK
-TODO: Complete the Mermaid class diagram using the fixed class names. Show:
-- Inheritance from IRepositorySource, SortStrategy, and IRepositoryExporter.
-- CrawlerApplication composition/ownership of parser, analyzer, reporter, and exporter dependencies.
-- Usage of Repository and option value types.
-- GitHubRepositorySource usage of client/parser.
-- JsonRepositorySource and JsonRepositoryExporter usage of RepositoryJsonCodec.
-Explain every arrow in prose after the diagram.
--->
+Figure 1 shows the complete proposed class structure. Interface realization is used where behavior is expected to vary at runtime. Composition identifies services whose lifecycle is controlled by `CrawlerApplication`; aggregation identifies collaborators supplied to another object by reference. Dashed arrows show temporary usage of values or services during one workflow.
 
 ```mermaid
 classDiagram
+    class Repository {
+        +string owner
+        +string name
+        +string description
+        +uint64_t stars
+        +uint64_t forks
+        +string language
+        +uint64_t size
+        +string updated_at
+        +string url
+    }
+
+    class CollectionOptions {
+        +string query
+        +size_t count
+    }
+
+    class AnalysisOptions {
+        +path input_path
+        +uint64_t min_stars
+        +string language
+        +string sort_key
+        +size_t top_n
+        +path output_path
+    }
+
+    class CommandLineParser {
+        +parse(arguments) ParsedCommand
+    }
+
     class IRepositorySource {
         <<interface>>
         +load() vector~Repository~
     }
-    class GitHubRepositorySource
-    class JsonRepositorySource
+    class GitHubRepositorySource {
+        -GitHubClient client
+        -GitHubResponseParser parser
+        -CollectionOptions options
+        +load() vector~Repository~
+    }
+    class JsonRepositorySource {
+        -RepositoryJsonCodec codec
+        -path input_path
+        +load() vector~Repository~
+    }
+    class GitHubClient {
+        +search(options) string
+    }
+    class GitHubResponseParser {
+        +parse(response) vector~Repository~
+    }
+    class RepositoryJsonCodec {
+        +read(input) vector~Repository~
+        +write(repositories, output) void
+    }
     IRepositorySource <|.. GitHubRepositorySource
     IRepositorySource <|.. JsonRepositorySource
 
@@ -244,39 +285,84 @@ classDiagram
         <<interface>>
         +sort(repositories) void
     }
-    class StarsSortStrategy
-    class ForksSortStrategy
-    class UpdatedSortStrategy
+    class StarsSortStrategy {
+        +sort(repositories) void
+    }
+    class ForksSortStrategy {
+        +sort(repositories) void
+    }
+    class UpdatedSortStrategy {
+        +sort(repositories) void
+    }
     SortStrategy <|.. StarsSortStrategy
     SortStrategy <|.. ForksSortStrategy
     SortStrategy <|.. UpdatedSortStrategy
+
+    class RepositoryAnalyzer {
+        +analyze(repositories, options, strategy) vector~Repository~
+        -matches_filters(repository, options) bool
+    }
+
+    class RepositoryReporter {
+        +print_summary(options, loaded, selected) void
+        +print_rows(repositories) void
+    }
 
     class IRepositoryExporter {
         <<interface>>
         +save(repositories, path) void
     }
-    class JsonRepositoryExporter
+    class JsonRepositoryExporter {
+        -RepositoryJsonCodec codec
+        +save(repositories, path) void
+    }
     IRepositoryExporter <|.. JsonRepositoryExporter
 
-    class CrawlerApplication
-    class CommandLineParser
-    class RepositoryAnalyzer
-    class RepositoryReporter
-    class RepositoryJsonCodec
+    class CrawlerApplication {
+        -CommandLineParser command_line_parser
+        -RepositoryAnalyzer analyzer
+        -RepositoryReporter reporter
+        -unique_ptr~IRepositoryExporter~ exporter
+        +run(arguments) int
+        -run_collection(options) int
+        -run_analysis(options) int
+    }
 
     CrawlerApplication *-- CommandLineParser
     CrawlerApplication *-- RepositoryAnalyzer
     CrawlerApplication *-- RepositoryReporter
+    CrawlerApplication *-- IRepositoryExporter
+    CrawlerApplication ..> IRepositorySource : selects and uses
+    CrawlerApplication ..> SortStrategy : selects and uses
+    CrawlerApplication ..> CollectionOptions
+    CrawlerApplication ..> AnalysisOptions
+
+    GitHubRepositorySource o-- GitHubClient
+    GitHubRepositorySource o-- GitHubResponseParser
+    GitHubRepositorySource *-- CollectionOptions
+    JsonRepositorySource o-- RepositoryJsonCodec
+    JsonRepositoryExporter o-- RepositoryJsonCodec
+
+    GitHubResponseParser ..> Repository : creates
+    RepositoryJsonCodec ..> Repository : reads and writes
+    RepositoryAnalyzer ..> Repository
+    RepositoryAnalyzer ..> AnalysisOptions
     RepositoryAnalyzer ..> SortStrategy
-    JsonRepositorySource ..> RepositoryJsonCodec
-    JsonRepositoryExporter ..> RepositoryJsonCodec
+    RepositoryReporter ..> Repository
+    IRepositoryExporter ..> Repository
 ```
 
 #### Relationship Explanation
 
-<!-- PART 2 - BROCK
-TODO: Explain inheritance, composition, and usage relationships in the diagram. State why sources/exporters are abstractions while RepositoryReporter remains concrete.
--->
+`GitHubRepositorySource` and `JsonRepositorySource` realize `IRepositorySource`. The application can therefore acquire `vector<Repository>` values without coupling its workflow to HTTPS or file I/O. The same interface also permits a fake source to return controlled repositories during application tests. `StarsSortStrategy`, `ForksSortStrategy`, and `UpdatedSortStrategy` realize `SortStrategy`, so `RepositoryAnalyzer` invokes one sorting contract regardless of the selected key. `JsonRepositoryExporter` realizes `IRepositoryExporter`, which lets application tests replace disk output with an in-memory fake.
+
+`CrawlerApplication` composes `CommandLineParser`, `RepositoryAnalyzer`, `RepositoryReporter`, and an `IRepositoryExporter` implementation because it coordinates their lifecycles as application services. It uses an `IRepositorySource` and `SortStrategy` selected for the current command, but those temporary workflow objects are not part of the application's domain state. The application depends on their abstract interfaces, following dependency inversion and allowing collection and analysis to share one controller.
+
+`GitHubRepositorySource` aggregates `GitHubClient` and `GitHubResponseParser`: it delegates communication and GitHub-specific JSON conversion rather than implementing either responsibility. It contains a `CollectionOptions` value for the request being performed. `JsonRepositorySource` and `JsonRepositoryExporter` aggregate `RepositoryJsonCodec`, allowing both directions of the normalized dataset schema to remain in one component. These collaborators can be injected, reused, or replaced by test doubles without changing the source or exporter contracts.
+
+Dashed dependencies indicate method-level use rather than ownership. `RepositoryAnalyzer` reads `AnalysisOptions`, copies `Repository` values, and calls a `SortStrategy`. Parsers and codecs create or serialize `Repository` values but do not own repositories after returning. `RepositoryReporter` and `IRepositoryExporter` receive selected values by const reference and cannot change the selection. The options and repository objects are value types, so their lifetimes are controlled by the workflow that created them.
+
+Sources and exporters are interfaces because the system already has multiple acquisition mechanisms and because external I/O benefits from substitution in tests. Sorting is an interface because its algorithm varies by user selection. `RepositoryReporter` remains concrete because the required terminal representation has one stable behavior and no current runtime variation; introducing an interface for a single nonvarying format would add indirection without solving a design problem. This balance applies abstraction at actual variation points rather than creating interfaces for every class.
 
 ### 2.6 Analysis Interaction
 
