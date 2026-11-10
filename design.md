@@ -14,24 +14,19 @@ The requirement IDs and class/interface names below are fixed coordination point
 
 ## Overview
 
-<!-- PART 1 - JAMESON
-TODO: Write 2-3 paragraphs explaining:
-- What the crawler currently does in collection and analysis modes.
-- Why the current mix of free functions, namespaces, and main() coordination should be refactored.
-- How the proposed OOP design separates acquisition, analysis, output, and orchestration.
--->
+The GitHub Project Crawler currently runs two modes out of one `main()`: collection mode builds a `SearchOptions` value, sends it through `GitHubClient` to GitHub's Search API, hands the response body to `RepositoryParser`, and uses `RepositoryStore` to print the results and save them to `repositories.json`. Analysis mode builds an `AnalysisOptions` value, loads a local JSON dataset through `DataLoader`, filters it with `repository_filter`, sorts and truncates it with `repository_analyzer`, and prints/exports the result through `Reporter` and `JsonExporter`. Both modes work, and the acceptance criteria for Milestones 1 and 2 are met, but the implementation is a collection of free functions and namespaces (`DataLoader::`, `RepositoryStore::`, `Reporter::`, `JsonExporter::`) coordinated directly inside `main()`.
+
+That style creates three recurring problems. First, `main()` itself decides which mode to run, builds every collaborator, and calls each step directly, so the orchestration logic for an entire workflow lives in one function with no name of its own and no way to substitute a fake collaborator for testing. Second, the two workflows read and write JSON through two independently written code paths -- `RepositoryParser` for GitHub's response shape and `DataLoader`/`RepositoryStore` for the project's own local schema -- with no shared boundary enforcing that both paths agree on what a normalized `Repository` looks like. Third, because printing and saving are separate free-function calls rather than one consistently reused value, nothing currently guarantees that what gets printed and what gets exported are the same selection in the same order, which is exactly what R9 requires.
+
+The proposed design replaces this with a small set of collaborating objects. `IRepositorySource` abstracts "produce normalized `Repository` values," so collection and analysis share one acquisition contract instead of two unrelated code paths. `RepositoryAnalyzer` isolates the filter/sort/top-N pipeline so it can be tested without touching acquisition or output at all. `RepositoryReporter` and `IRepositoryExporter` both receive the exact same selected vector from `CrawlerApplication`, so there is one selection used for both the printed and the exported view rather than two separate calls that could drift apart. `CrawlerApplication` becomes the one place that decides collection vs. analysis, constructs and wires the collaborators for that workflow, and reports failure -- replacing the orchestration that free functions in `main()` currently handle implicitly.
 
 ## 1. Requirements
 
 The IDs in this table are the stable references used by the class design and test plan.
 
-<!-- PART 1 - JAMESON
-TODO: Refine each requirement into polished report language. Preserve IDs and observable behavior.
--->
-
 | ID | Testable requirement |
 | --- | --- |
-| R1 | The command-line application shall select collection or analysis mode, apply documented defaults, and reject unknown or malformed options with a clear error and nonzero exit status. |
+| R1 | The command-line application shall select collection or analysis mode (rejecting an unrecognized mode the same way as an unrecognized option), apply documented defaults, and reject unknown or malformed options with a clear error and nonzero exit status. |
 | R2 | In collection mode, the system shall request the configured number of public repositories from GitHub, using `GITHUB_TOKEN` when available, and shall report connection or API failures without producing a successful result. |
 | R3 | The system shall represent each repository with owner, name, description, stars, forks, language, size, updated time, and URL, preserving empty description or language values safely. |
 | R4 | A successful collection shall print every collected repository and save the same normalized repositories as a valid JSON array in `repositories.json`. |
@@ -44,9 +39,11 @@ TODO: Refine each requirement into polished report language. Preserve IDs and ob
 
 ### 1.1 Requirement Notes and Examples
 
-<!-- PART 1 - JAMESON
-TODO: Add concise examples for collection, analysis, and one failure case. Explain what evidence would prove each behavior without discussing class implementation.
--->
+**Collection example.** Running the crawler with no arguments uses the documented defaults (`stars:>1000`, 100 repositories, sorted by stars descending). A successful run prints all 100 repositories to standard output and writes `repositories.json` as a JSON array of exactly 100 objects, each with the nine `Repository` fields from R3. The evidence that R4 holds is mechanical: parse the saved file and confirm its length matches the number of printed rows and every object has all nine fields, including an empty string (not `null` or a missing key) for repositories with no description or no detected language.
+
+**Analysis example.** Running `analyze --input repositories.json --min-stars 5000 --language C++ --sort forks --top 5 --output selected.json` loads the normalized dataset, keeps only repositories with at least 5,000 stars (inclusive) and a language of exactly `C++`, sorts the remainder by forks descending with owner-then-name as the ascending tie-breaker, and keeps the top 5 -- or fewer, if fewer than 5 repositories match. The printed rows and the contents of `selected.json` must be identical: same repositories, same order, same fields. Evidence is a direct field-by-field comparison between what was printed and what was exported.
+
+**Failure example.** Pointing analysis mode at a local file that does not exist, is not valid JSON, or is valid JSON that is not an array of repository-shaped objects must all be rejected the same way: a clear, specific error on standard error (naming the path and the problem -- missing file vs. malformed JSON vs. wrong shape), a nonzero exit status, and no `selected.json` written or overwritten. The same standard applies to a collection-mode failure, such as an invalid `GITHUB_TOKEN`: GitHub returns `401 Bad credentials`, the crawler reports that status and body rather than retrying silently, and `repositories.json` is left untouched. In every failure case, the evidence that R10 holds is the absence of an output file containing partial or empty results presented as if the run had succeeded.
 
 ## 2. System Design
 
@@ -131,20 +128,24 @@ public:
 
 ### 2.3 Data Acquisition Design
 
-<!-- PART 1 - JAMESON
-TODO:
-1. Explain Repository, option values, CommandLineParser, and both source implementations.
-2. Explain why GitHubResponseParser and RepositoryJsonCodec are separate schemas.
-3. Describe important data members and main functions for each acquisition class.
-4. Explain ownership: sources reference collaborators supplied by CrawlerApplication for one workflow.
-5. Map each class explicitly to R1-R5 and R10.
--->
+`Repository` is a plain value object: nine public fields (owner, name, description, stars, forks, language, size, updated time, URL) with no behavior of its own, matching R3. `CollectionOptions` and `AnalysisOptions` are the same kind of value object for the two modes' configuration -- `CollectionOptions` holds the GitHub query and the requested count, `AnalysisOptions` holds the input path, the filter values, the sort key, top-N, and the output path. `CommandLineParser` is the one class that turns raw `argv` into either a validated `CollectionOptions` or a validated `AnalysisOptions`, selecting a mode and applying the documented defaults for whichever fields the user omitted. Centralizing that logic in one class is what lets R1's "reject unknown or malformed options with a clear error" be enforced in exactly one place instead of being duplicated per mode, the way `parse_command_line` and `parse_analysis_command_line` currently do it as two separate free functions.
+
+`GitHubRepositorySource` and `JsonRepositorySource` are the two concrete implementations of `IRepositorySource`. `GitHubRepositorySource` holds a `GitHubClient`, a `GitHubResponseParser`, and the `CollectionOptions` for the request it was built to perform; its `load()` sends the request through the client and hands the raw response body to the parser, returning normalized `Repository` values or letting a thrown/propagated error reach `CrawlerApplication`. `JsonRepositorySource` holds a `RepositoryJsonCodec` and the input path for an analysis run; its `load()` asks the codec to read and decode that file. Both classes satisfy the same interface, so `CrawlerApplication` can acquire a `vector<Repository>` for either mode without knowing or caring whether the data came from the network or from disk -- and a test can substitute a third, fake `IRepositorySource` that returns fixed values with no network or filesystem access at all.
+
+`GitHubResponseParser` and `RepositoryJsonCodec` are deliberately two separate classes rather than one shared parser, because they decode two different JSON schemas that have nothing to do with each other beyond both ultimately producing a `Repository`. GitHub's search response is a third-party, externally-defined shape -- nested under a nested `items` array, with fields like `stargazers_count` and `html_url` that don't match this project's own field names -- and that shape can change or be versioned independently of anything this project controls. The local `repositories.json`/`selected.json` schema is this project's own flat array of already-normalized objects, defined and versioned entirely by this team. Collapsing both into one parser would mean every GitHub API quirk leaks into the code that reads and writes the project's own save files, and vice versa; keeping them separate means a future change to either schema only touches one class. `RepositoryJsonCodec` is shared in both directions -- `JsonRepositorySource` uses it to read a local dataset for analysis, and `JsonRepositoryExporter` uses the same codec to write one -- so both directions of the local schema are guaranteed to agree with each other, which matters for R4 and R9.
+
+None of the four acquisition classes hold acquisition state across calls: `GitHubClient` and `GitHubResponseParser` are stateless services invoked once per request, and `RepositoryJsonCodec` is a stateless pair of read/write operations. The only state that exists is the configuration each source is constructed with (`CollectionOptions` or an input path) and the collaborators it was given. Those collaborators -- `GitHubClient`, `GitHubResponseParser`, `RepositoryJsonCodec` -- are not created by the sources themselves; they are constructed once by `CrawlerApplication` and passed in by reference, so the application controls their lifetime and can substitute fakes for any of them in a test without changing `GitHubRepositorySource` or `JsonRepositorySource` at all. This mirrors how `CrawlerApplication` later supplies the same kind of injected collaborators to `RepositoryAnalyzer`, `RepositoryReporter`, and `IRepositoryExporter`.
+
+| Requirement | Acquisition design support |
+| --- | --- |
+| R1 | `CommandLineParser` selects collection or analysis mode and validates options before any acquisition begins. |
+| R2 | `GitHubRepositorySource` requests the configured count via `GitHubClient`, including `GITHUB_TOKEN` when present. |
+| R3 | `GitHubResponseParser` and `RepositoryJsonCodec` both normalize into the same nine-field `Repository` shape, safely defaulting empty description/language. |
+| R4 | `JsonRepositoryExporter`, using `RepositoryJsonCodec`, writes the collected set as a valid JSON array alongside `RepositoryReporter` printing the same values. |
+| R5 | `JsonRepositorySource` rejects missing, malformed, non-array, or incorrectly typed local input via `RepositoryJsonCodec`. |
+| R10 | Failures at any acquisition stage (connection, HTTP status, missing file, malformed JSON) propagate to `CrawlerApplication` without producing a partial or empty success. |
 
 #### 2.3.1 Collection Interaction
-
-<!-- PART 1 - JAMESON
-TODO: Complete or refine this sequence. Keep the class names stable.
--->
 
 ```mermaid
 sequenceDiagram
@@ -159,13 +160,23 @@ sequenceDiagram
     User->>App: collection command
     App->>Source: load()
     Source->>Client: search(options)
-    Client-->>Source: response body
-    Source->>Parser: parse(response body)
-    Parser-->>Source: vector<Repository>
-    Source-->>App: vector<Repository>
-    App->>Reporter: print rows
-    App->>Exporter: save repositories.json
+    alt request or auth failure
+        Client-->>Source: error
+        Source-->>App: propagate error
+        App-->>User: report failure, nonzero exit
+    else success
+        Client-->>Source: response body
+        Source->>Parser: parse(response body)
+        Parser-->>Source: vector<Repository>
+        Source-->>App: vector<Repository>
+        App->>Reporter: print rows
+        App->>Exporter: save repositories.json
+        Exporter-->>App: write result
+        App-->>User: summary and nonzero-free exit
+    end
 ```
+
+The interaction has exactly one acquisition step: `GitHubRepositorySource` is the only collaborator that talks to `GitHubClient` and `GitHubResponseParser`, and `CrawlerApplication` never calls either of those directly. This keeps the failure path simple -- if `GitHubClient` reports a connection problem or `GitHubResponseParser` encounters an unexpected response shape, that error reaches `CrawlerApplication` through the same `load()` call used for success, and the application reports it and skips both `RepositoryReporter` and `JsonRepositoryExporter` rather than printing or saving anything. Only a successful `load()` reaches the output stage, and -- matching R9 -- both `RepositoryReporter` and `JsonRepositoryExporter` are handed the exact same vector that `load()` returned, with nothing re-fetched or re-parsed between the print and the export.
 
 ### 2.4 Analysis Architecture
 
