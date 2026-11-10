@@ -44,6 +44,27 @@ These names are the shared design contract used by the `design.md` outline. The 
 
 Part 1 and Part 2 can proceed at the same time because the requirement IDs, class names, and interface boundaries are fixed in `design.md`.
 
+## Using the `design.md` Outline
+
+The repository-root `design.md` file is the shared draft and source of truth for Milestone 3. Contributors should edit that file directly rather than creating separate Part 1 or Part 2 documents.
+
+Each work area is marked with HTML comments so contributors can find their sections without changing another part:
+
+- Part 1 uses comments beginning with `PART 1 - JAMESON` in the Overview, Requirements, Data Acquisition Design, and Collection Interaction sections.
+- Part 2 uses comments beginning with `PART 2 - BROCK` in the Analysis Architecture, Class Structure, Relationship Explanation, Analysis Interaction, and Strategy Pattern sections.
+- Part 3 uses comments beginning with `PART 3 - UNASSIGNED` in the Application/Output Design and Test Design sections.
+
+The outline already provides:
+
+- Stable requirement IDs `R1-R10`.
+- The shared class catalog and requirement mappings.
+- Representative interface declarations.
+- Mermaid class and sequence diagram scaffolds.
+- Planned test and traceability table scaffolds.
+- A final review checklist.
+
+Contributors should replace the `TODO` instructions in their assigned sections with report prose, declarations, and diagrams while preserving shared names and IDs. Before submission, the team must remove all ownership notes, `TODO` comments, and this working-outline notice from `design.md`.
+
 ## Part 1: Requirements and Data Acquisition Design
 
 ### Responsibilities
@@ -77,10 +98,10 @@ Part 1 and Part 2 can proceed at the same time because the requirement IDs, clas
 
 ### Deliverables
 
-- Overview text for `design.md`.
-- Numbered requirements table.
-- Data-acquisition class descriptions and declarations.
-- Collection interaction diagram.
+- Complete the Overview and Sections 1, 1.1, 2.3, and 2.3.1 in `design.md`.
+- Refine the existing numbered requirements table without renumbering `R1-R10`.
+- Complete the data-acquisition class descriptions and declarations.
+- Complete the collection interaction diagram.
 - Initial requirements-to-classes mapping.
 
 ### Acceptance Checks
@@ -121,10 +142,11 @@ Part 1 and Part 2 can proceed at the same time because the requirement IDs, clas
 
 ### Deliverables
 
-- Analysis-class descriptions and declarations.
-- Complete UML class diagram.
-- Analysis interaction diagram.
-- Strategy-pattern bonus section.
+- Complete Sections 2.4, 2.5, 2.6, and Optional Bonus in `design.md`.
+- Complete the analysis-class descriptions and declarations.
+- Complete the existing UML class diagram scaffold.
+- Complete the analysis interaction diagram.
+- Complete the Strategy-pattern bonus section.
 - Analysis requirements-to-classes mapping.
 
 ### Acceptance Checks
@@ -168,10 +190,11 @@ Part 1 and Part 2 can proceed at the same time because the requirement IDs, clas
 
 ### Deliverables
 
-- Application/output class descriptions and declarations.
-- Completed workflow interaction descriptions.
-- Planned test-case table.
-- Requirements-to-tests coverage table.
+- Complete Sections 2.7, 3, and 3.1 in `design.md`.
+- Complete the application/output class descriptions and declarations.
+- Complete the workflow interaction descriptions.
+- Complete the existing planned test-case table.
+- Complete the existing requirements-to-tests coverage table.
 - Integrated draft of `design.md`.
 
 ### Acceptance Checks
