@@ -169,36 +169,115 @@ sequenceDiagram
 
 ### 2.4 Analysis Architecture
 
-<!-- PART 2 - BROCK
-TODO:
-1. Explain RepositoryAnalyzer and why it owns workflow order but not output.
-2. Explain filter behavior and inclusive minimum-star/language rules.
-3. Explain top-N behavior and edge cases.
-4. Explain SortStrategy and all three concrete strategies.
-5. Include representative declarations for StarsSortStrategy, ForksSortStrategy, and UpdatedSortStrategy.
-6. Map the analysis classes explicitly to R6-R8.
--->
+`RepositoryAnalyzer` is a stateless application service that transforms a loaded collection into the repositories selected by `AnalysisOptions`. It owns the required analysis sequence--Filter, Sort, then Top N--but it does not load files, print rows, or export JSON. Keeping output outside the analyzer allows the same selected vector to be passed to both `RepositoryReporter` and `IRepositoryExporter`, which supports R9 without duplicating analysis logic.
+
+The analyzer first copies matching `Repository` values into a result vector. A repository matches when its star count is greater than or equal to `min_stars` and its language equals the requested language when a language was supplied. An empty language option means any language. The inclusive star comparison preserves repositories exactly on the requested threshold, as required by R6.
+
+After filtering, the analyzer delegates ordering to the supplied `SortStrategy`. Each strategy sorts its primary value in descending order and uses owner followed by repository name in ascending order when primary values tie. The common strategy interface allows runtime selection without placing a sort-key conditional inside the analyzer. The analyzer then applies top N by resizing only when the result contains more than `top_n` entries. If fewer than N remain, all matches are returned; an empty input or zero matches returns an empty vector. Command-line validation rejects a zero `top_n` before analysis begins.
+
+Neither `RepositoryAnalyzer` nor the concrete strategies require persistent data members. They are behavior objects: all input arrives through method parameters, and each call produces a result without retaining repositories between runs. This makes repeated calls independent and permits one strategy object to be reused safely.
+
+Representative declarations are:
+
+```cpp
+class StarsSortStrategy final : public SortStrategy {
+public:
+    void sort(std::vector<Repository>& repositories) const override;
+};
+
+class ForksSortStrategy final : public SortStrategy {
+public:
+    void sort(std::vector<Repository>& repositories) const override;
+};
+
+class UpdatedSortStrategy final : public SortStrategy {
+public:
+    void sort(std::vector<Repository>& repositories) const override;
+};
+
+class RepositoryAnalyzer {
+public:
+    std::vector<Repository> analyze(
+        const std::vector<Repository>& repositories,
+        const AnalysisOptions& options,
+        const SortStrategy& sort_strategy) const;
+
+private:
+    bool matches_filters(
+        const Repository& repository,
+        const AnalysisOptions& options) const;
+};
+```
+
+`RepositoryAnalyzer::analyze()` accepts its input by const reference and returns a separate vector, so analysis does not reorder or truncate the loaded dataset. `SortStrategy::sort()` intentionally accepts the internal result vector by mutable reference because sorting is the strategy's sole responsibility. Updated timestamps use the same GitHub ISO 8601 format, so descending string comparison produces descending chronological order for this project.
+
+| Requirement | Analysis design support |
+| --- | --- |
+| R6 | `matches_filters()` applies inclusive minimum stars and optional exact language matching. |
+| R7 | The three `SortStrategy` implementations provide descending, deterministic runtime-selectable ordering. |
+| R8 | `analyze()` performs top-N truncation only after filtering and sorting and retains all values when fewer than N remain. |
 
 ### 2.5 Class Structure and Relationships
 
-<!-- PART 2 - BROCK
-TODO: Complete the Mermaid class diagram using the fixed class names. Show:
-- Inheritance from IRepositorySource, SortStrategy, and IRepositoryExporter.
-- CrawlerApplication composition/ownership of parser, analyzer, reporter, and exporter dependencies.
-- Usage of Repository and option value types.
-- GitHubRepositorySource usage of client/parser.
-- JsonRepositorySource and JsonRepositoryExporter usage of RepositoryJsonCodec.
-Explain every arrow in prose after the diagram.
--->
+Figure 1 shows the complete proposed class structure. Interface realization is used where behavior is expected to vary at runtime. Composition identifies services whose lifecycle is controlled by `CrawlerApplication`; aggregation identifies collaborators supplied to another object by reference. Dashed arrows show temporary usage of values or services during one workflow.
 
 ```mermaid
 classDiagram
+    class Repository {
+        +string owner
+        +string name
+        +string description
+        +uint64_t stars
+        +uint64_t forks
+        +string language
+        +uint64_t size
+        +string updated_at
+        +string url
+    }
+
+    class CollectionOptions {
+        +string query
+        +size_t count
+    }
+
+    class AnalysisOptions {
+        +path input_path
+        +uint64_t min_stars
+        +string language
+        +string sort_key
+        +size_t top_n
+        +path output_path
+    }
+
+    class CommandLineParser {
+        +parse(arguments) ParsedCommand
+    }
+
     class IRepositorySource {
         <<interface>>
         +load() vector~Repository~
     }
-    class GitHubRepositorySource
-    class JsonRepositorySource
+    class GitHubRepositorySource {
+        -GitHubClient client
+        -GitHubResponseParser parser
+        -CollectionOptions options
+        +load() vector~Repository~
+    }
+    class JsonRepositorySource {
+        -RepositoryJsonCodec codec
+        -path input_path
+        +load() vector~Repository~
+    }
+    class GitHubClient {
+        +search(options) string
+    }
+    class GitHubResponseParser {
+        +parse(response) vector~Repository~
+    }
+    class RepositoryJsonCodec {
+        +read(input) vector~Repository~
+        +write(repositories, output) void
+    }
     IRepositorySource <|.. GitHubRepositorySource
     IRepositorySource <|.. JsonRepositorySource
 
@@ -206,45 +285,88 @@ classDiagram
         <<interface>>
         +sort(repositories) void
     }
-    class StarsSortStrategy
-    class ForksSortStrategy
-    class UpdatedSortStrategy
+    class StarsSortStrategy {
+        +sort(repositories) void
+    }
+    class ForksSortStrategy {
+        +sort(repositories) void
+    }
+    class UpdatedSortStrategy {
+        +sort(repositories) void
+    }
     SortStrategy <|.. StarsSortStrategy
     SortStrategy <|.. ForksSortStrategy
     SortStrategy <|.. UpdatedSortStrategy
+
+    class RepositoryAnalyzer {
+        +analyze(repositories, options, strategy) vector~Repository~
+        -matches_filters(repository, options) bool
+    }
+
+    class RepositoryReporter {
+        +print_summary(options, loaded, selected) void
+        +print_rows(repositories) void
+    }
 
     class IRepositoryExporter {
         <<interface>>
         +save(repositories, path) void
     }
-    class JsonRepositoryExporter
+    class JsonRepositoryExporter {
+        -RepositoryJsonCodec codec
+        +save(repositories, path) void
+    }
     IRepositoryExporter <|.. JsonRepositoryExporter
 
-    class CrawlerApplication
-    class CommandLineParser
-    class RepositoryAnalyzer
-    class RepositoryReporter
-    class RepositoryJsonCodec
+    class CrawlerApplication {
+        -CommandLineParser command_line_parser
+        -RepositoryAnalyzer analyzer
+        -RepositoryReporter reporter
+        -unique_ptr~IRepositoryExporter~ exporter
+        +run(arguments) int
+        -run_collection(options) int
+        -run_analysis(options) int
+    }
 
     CrawlerApplication *-- CommandLineParser
     CrawlerApplication *-- RepositoryAnalyzer
     CrawlerApplication *-- RepositoryReporter
+    CrawlerApplication *-- IRepositoryExporter
+    CrawlerApplication ..> IRepositorySource : selects and uses
+    CrawlerApplication ..> SortStrategy : selects and uses
+    CrawlerApplication ..> CollectionOptions
+    CrawlerApplication ..> AnalysisOptions
+
+    GitHubRepositorySource o-- GitHubClient
+    GitHubRepositorySource o-- GitHubResponseParser
+    GitHubRepositorySource *-- CollectionOptions
+    JsonRepositorySource o-- RepositoryJsonCodec
+    JsonRepositoryExporter o-- RepositoryJsonCodec
+
+    GitHubResponseParser ..> Repository : creates
+    RepositoryJsonCodec ..> Repository : reads and writes
+    RepositoryAnalyzer ..> Repository
+    RepositoryAnalyzer ..> AnalysisOptions
     RepositoryAnalyzer ..> SortStrategy
-    JsonRepositorySource ..> RepositoryJsonCodec
-    JsonRepositoryExporter ..> RepositoryJsonCodec
+    RepositoryReporter ..> Repository
+    IRepositoryExporter ..> Repository
 ```
 
 #### Relationship Explanation
 
-<!-- PART 2 - BROCK
-TODO: Explain inheritance, composition, and usage relationships in the diagram. State why sources/exporters are abstractions while RepositoryReporter remains concrete.
--->
+`GitHubRepositorySource` and `JsonRepositorySource` realize `IRepositorySource`. The application can therefore acquire `vector<Repository>` values without coupling its workflow to HTTPS or file I/O. The same interface also permits a fake source to return controlled repositories during application tests. `StarsSortStrategy`, `ForksSortStrategy`, and `UpdatedSortStrategy` realize `SortStrategy`, so `RepositoryAnalyzer` invokes one sorting contract regardless of the selected key. `JsonRepositoryExporter` realizes `IRepositoryExporter`, which lets application tests replace disk output with an in-memory fake.
+
+`CrawlerApplication` composes `CommandLineParser`, `RepositoryAnalyzer`, `RepositoryReporter`, and an `IRepositoryExporter` implementation because it coordinates their lifecycles as application services. It uses an `IRepositorySource` and `SortStrategy` selected for the current command, but those temporary workflow objects are not part of the application's domain state. The application depends on their abstract interfaces, following dependency inversion and allowing collection and analysis to share one controller.
+
+`GitHubRepositorySource` aggregates `GitHubClient` and `GitHubResponseParser`: it delegates communication and GitHub-specific JSON conversion rather than implementing either responsibility. It contains a `CollectionOptions` value for the request being performed. `JsonRepositorySource` and `JsonRepositoryExporter` aggregate `RepositoryJsonCodec`, allowing both directions of the normalized dataset schema to remain in one component. These collaborators can be injected, reused, or replaced by test doubles without changing the source or exporter contracts.
+
+Dashed dependencies indicate method-level use rather than ownership. `RepositoryAnalyzer` reads `AnalysisOptions`, copies `Repository` values, and calls a `SortStrategy`. Parsers and codecs create or serialize `Repository` values but do not own repositories after returning. `RepositoryReporter` and `IRepositoryExporter` receive selected values by const reference and cannot change the selection. The options and repository objects are value types, so their lifetimes are controlled by the workflow that created them.
+
+Sources and exporters are interfaces because the system already has multiple acquisition mechanisms and because external I/O benefits from substitution in tests. Sorting is an interface because its algorithm varies by user selection. `RepositoryReporter` remains concrete because the required terminal representation has one stable behavior and no current runtime variation; introducing an interface for a single nonvarying format would add indirection without solving a design problem. This balance applies abstraction at actual variation points rather than creating interfaces for every class.
 
 ### 2.6 Analysis Interaction
 
-<!-- PART 2 - BROCK
-TODO: Refine this sequence and explain how it proves Filter -> Sort -> Top N and shared output selection.
--->
+Figure 2 traces one analysis command. `CrawlerApplication` first requests normalized values from `JsonRepositorySource`; GitHub collection is not part of this path. The application selects one concrete strategy from `AnalysisOptions.sort_key` and passes it to `RepositoryAnalyzer`. The analyzer owns the three ordered transformation steps and returns one selected vector. The application then passes that same const collection to both output components.
 
 ```mermaid
 sequenceDiagram
@@ -258,15 +380,24 @@ sequenceDiagram
 
     User->>App: analysis command
     App->>Source: load()
+    Source->>Source: decode normalized JSON
     Source-->>App: vector<Repository>
+    Note over App,Strategy: Select strategy from options.sort_key
     App->>Analyzer: analyze(repositories, options, strategy)
-    Analyzer->>Analyzer: filter
+    Analyzer->>Analyzer: filter by min stars and language
     Analyzer->>Strategy: sort(filtered repositories)
+    Strategy-->>Analyzer: deterministic descending order
     Analyzer->>Analyzer: top N
     Analyzer-->>App: selected repositories
     App->>Reporter: print same selection
     App->>Exporter: save same selection
+    Reporter-->>User: summary and rows
+    Exporter-->>App: export completed
 ```
+
+This interaction enforces the required order because the strategy is invoked only after filtering and top-N resizing occurs only after the strategy returns. `RepositoryReporter` and `JsonRepositoryExporter` never invoke `RepositoryAnalyzer` themselves, so neither can accidentally apply different filters or ordering. Both receive the exact vector returned by `analyze()`, preserving repository identity, order, and count for R9.
+
+The source completes loading before analysis begins. If loading throws a missing-file, malformed-JSON, or schema error, control returns to `CrawlerApplication`, which reports failure and does not call the analyzer or output components. Similarly, an export failure is returned after reporting but is not described as a successful export. These boundaries support the error behavior in R10 while keeping error presentation in the application layer.
 
 ### 2.7 Application Coordination and Output Design
 
@@ -323,14 +454,41 @@ TODO: Explain component vs integration tests, why fakes avoid live GitHub, and w
 
 ## Optional Bonus: Strategy Pattern
 
-<!-- PART 2 - BROCK
-TODO: Write the bonus explanation with four explicit parts:
-1. Problem: sort behavior varies while analysis workflow stays fixed.
-2. Pattern: Strategy encapsulates each sorting algorithm behind one interface.
-3. Participants: RepositoryAnalyzer, SortStrategy, and three concrete strategies.
-4. Improvement: runtime selection, isolated tests, and extension without changing analyzer control flow.
-Explain why a conditional inside RepositoryAnalyzer would be more tightly coupled.
--->
+### Design Problem
+
+The analysis workflow is stable--Filter, Sort, then Top N--but the sorting algorithm varies at runtime. Stars, forks, and updated time use different primary fields while sharing descending order and deterministic owner/name tie-breaking. Placing a chain of sort-key conditionals and all comparator implementations inside `RepositoryAnalyzer` would give that class multiple reasons to change. Adding a new sort mode would require editing the analyzer's control flow even though filtering and top-N behavior remain unchanged.
+
+### Selected Pattern and Participants
+
+The proposed design applies the Strategy pattern to this variation point. `SortStrategy` defines the sorting contract, and `StarsSortStrategy`, `ForksSortStrategy`, and `UpdatedSortStrategy` encapsulate the concrete algorithms. `RepositoryAnalyzer` is the context: it receives a strategy through `analyze()` and delegates only the ordering step. `CrawlerApplication` is responsible for selecting the concrete strategy from the already validated `sort_key`.
+
+```cpp
+std::unique_ptr<SortStrategy> make_sort_strategy(std::string_view sort_key)
+{
+    if (sort_key == "stars") {
+        return std::make_unique<StarsSortStrategy>();
+    }
+    if (sort_key == "forks") {
+        return std::make_unique<ForksSortStrategy>();
+    }
+    if (sort_key == "updated") {
+        return std::make_unique<UpdatedSortStrategy>();
+    }
+    throw std::invalid_argument("unsupported sort key");
+}
+```
+
+The selection helper is shown to clarify object creation; the design-pattern benefit comes from polymorphic use after selection. Once created, the analyzer communicates only through `SortStrategy::sort()` and does not inspect the key or concrete type.
+
+### Collaboration
+
+For an analysis command, `CrawlerApplication` chooses one strategy and passes it by reference with the loaded repositories and `AnalysisOptions`. `RepositoryAnalyzer` filters into a working vector, invokes the strategy on that vector, then applies top N. The concrete strategy compares its primary field and applies the same owner/name tie-breaking rule. It returns control without printing, exporting, or changing the original loaded vector.
+
+### Expected Improvement
+
+Strategy keeps `RepositoryAnalyzer` focused on workflow order and supports the open/closed principle: a future sort mode can be added as another `SortStrategy` implementation without changing analyzer logic. Each strategy can be tested directly with ties and boundary data, while analyzer tests can use a fake strategy to verify delegation and Filter -> Sort -> Top N ordering. Runtime selection remains explicit, and the three current algorithms share one interface that is visible in the UML model.
+
+The pattern introduces several small classes and one virtual call, but repository sorting already represents a real family of user-selectable algorithms. That variation and the need for isolated deterministic tests justify the additional abstraction. Applying Strategy to filtering or reporting would not currently provide the same benefit because those behaviors do not have multiple runtime-selectable implementations in the requirements.
 
 ## Final Review Checklist
 
