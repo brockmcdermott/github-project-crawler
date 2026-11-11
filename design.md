@@ -8,7 +8,7 @@ The GitHub Project Crawler currently runs two modes out of one `main()`: collect
 
 That style creates three recurring problems. First, `main()` itself decides which mode to run, builds every collaborator, and calls each step directly, so the orchestration logic for an entire workflow lives in one function with no name of its own and no way to substitute a fake collaborator for testing. Second, the two workflows read and write JSON through two independently written code paths -- `RepositoryParser` for GitHub's response shape and `DataLoader`/`RepositoryStore` for the project's own local schema -- with no shared boundary enforcing that both paths agree on what a normalized `Repository` looks like. Third, because printing and saving are separate free-function calls rather than one consistently reused value, nothing currently guarantees that what gets printed and what gets exported are the same selection in the same order, which is exactly what R9 requires.
 
-The proposed design replaces this with a small set of collaborating objects. `IRepositorySource` abstracts "produce normalized `Repository` values," so collection and analysis share one acquisition contract instead of two unrelated code paths. `RepositoryAnalyzer` isolates the filter/sort/top-N pipeline so it can be tested without touching acquisition or output at all. `RepositoryReporter` and `IRepositoryExporter` both receive the exact same selected vector from `CrawlerApplication`, so there is one selection used for both the printed and the exported view rather than two separate calls that could drift apart. `CrawlerApplication` becomes the one place that decides collection vs. analysis, constructs and wires the collaborators for that workflow, and reports failure -- replacing the orchestration that free functions in `main()` currently handle implicitly.
+The proposed design replaces this with a small set of collaborating objects. `IRepositorySource` abstracts "produce normalized `Repository` values," so collection and analysis share one acquisition contract instead of two unrelated code paths. `RepositoryAnalyzer` isolates the filter/sort/top-N pipeline so it can be tested without touching acquisition or output at all. `RepositoryReporter` and `IRepositoryExporter` both receive the exact same selected vector from `CrawlerApplication`, so there is one selection used for both the printed and the exported view rather than two separate calls that could drift apart. `CrawlerApplication` becomes the one place that decides collection vs. analysis, requests the appropriate source from its injected factory, coordinates the workflow, and reports failure -- replacing the orchestration that free functions in `main()` currently handle implicitly.
 
 ## 1. Requirements
 
@@ -16,7 +16,7 @@ The IDs in this table are the stable references used by the class design and tes
 
 | ID | Testable requirement |
 | --- | --- |
-| R1 | The command-line application shall select collection or analysis mode (rejecting an unrecognized mode the same way as an unrecognized option), apply documented defaults, and reject unknown or malformed options with a clear error and nonzero exit status. |
+| R1 | The command-line application shall enter analysis mode when the first argument is `analyze`; otherwise it shall enter collection mode with zero or one quoted search query. It shall apply documented defaults and reject malformed collection arguments or unknown/malformed analysis options with a clear error and nonzero exit status. |
 | R2 | In collection mode, the system shall request the configured number of public repositories from GitHub, using `GITHUB_TOKEN` when available, and shall report connection or API failures without producing a successful result. |
 | R3 | The system shall represent each repository with owner, name, description, stars, forks, language, size, updated time, and URL, preserving empty description or language values safely. |
 | R4 | A successful collection shall print every collected repository and save the same normalized repositories as a valid JSON array in `repositories.json`. |
@@ -50,7 +50,8 @@ The proposed classes use the following fixed boundaries:
 | `IRepositorySource` | Abstract interface that supplies normalized `Repository` values. | R2, R3, R5 |
 | `GitHubRepositorySource` | Uses `GitHubClient` and `GitHubResponseParser` to acquire repositories. | R2-R4, R10 |
 | `JsonRepositorySource` | Uses `RepositoryJsonCodec` to load a local normalized dataset. | R3, R5, R10 |
-| `GitHubClient` | Performs the HTTPS request and returns the response body or an error. | R2, R10 |
+| `GitHubRequest` | Value object containing a GitHub request target and headers. | R2 |
+| `GitHubClient` | Builds and performs the HTTPS request and returns the response body or an error. | R2, R10 |
 | `GitHubResponseParser` | Converts GitHub search-response JSON into normalized repositories. | R3, R10 |
 | `RepositoryJsonCodec` | Reads and writes the normalized local repository JSON schema. | R3-R5, R9-R10 |
 | `RepositoryAnalyzer` | Coordinates Filter -> Sort -> Top N over repository values. | R6-R8 |
@@ -68,6 +69,19 @@ The proposed classes use the following fixed boundaries:
 These declarations establish the boundaries used by all three contributors. They are representative design declarations, not implementation code for this milestone.
 
 ```cpp
+struct GitHubRequest {
+    std::string target;
+    std::map<std::string, std::string> headers;
+};
+
+class GitHubClient {
+public:
+    static GitHubRequest build_request(
+        const CollectionOptions& options,
+        std::optional<std::string_view> token);
+    std::string search(const CollectionOptions& options) const;
+};
+
 class IRepositorySource {
 public:
     virtual std::vector<Repository> load() = 0;
@@ -124,7 +138,9 @@ public:
 
 `GitHubResponseParser` and `RepositoryJsonCodec` are deliberately two separate classes rather than one shared parser, because they decode two different JSON schemas that have nothing to do with each other beyond both ultimately producing a `Repository`. GitHub's search response is a third-party, externally-defined shape -- nested under a nested `items` array, with fields like `stargazers_count` and `html_url` that don't match this project's own field names -- and that shape can change or be versioned independently of anything this project controls. The local `repositories.json`/`selected.json` schema is this project's own flat array of already-normalized objects, defined and versioned entirely by this team. Collapsing both into one parser would mean every GitHub API quirk leaks into the code that reads and writes the project's own save files, and vice versa; keeping them separate means a future change to either schema only touches one class. `RepositoryJsonCodec` is shared in both directions -- `JsonRepositorySource` uses it to read a local dataset for analysis, and `JsonRepositoryExporter` uses the same codec to write one -- so both directions of the local schema are guaranteed to agree with each other, which matters for R4 and R9.
 
-None of the four acquisition classes hold acquisition state across calls: `GitHubClient` and `GitHubResponseParser` are stateless services invoked once per request, and `RepositoryJsonCodec` is a stateless pair of read/write operations. The only state that exists is the configuration each source is constructed with (`CollectionOptions` or an input path) and the collaborators it was given. Those collaborators -- `GitHubClient`, `GitHubResponseParser`, `RepositoryJsonCodec` -- are not created by the sources themselves; they are constructed once by `CrawlerApplication` and passed in by reference, so the application controls their lifetime and can substitute fakes for any of them in a test without changing `GitHubRepositorySource` or `JsonRepositorySource` at all. This mirrors how `CrawlerApplication` later supplies the same kind of injected collaborators to `RepositoryAnalyzer`, `RepositoryReporter`, and `IRepositoryExporter`.
+`GitHubClient::build_request()` is a pure construction step: it URL-encodes the query, adds the configured count, and creates the required headers from an optional token. `search()` reads `GITHUB_TOKEN`, calls that helper, and performs the HTTPS operation. Separating request construction from transport makes R2 deterministic to test without exposing network access or requiring a fake concrete client.
+
+The acquisition services hold no per-run data across calls: `GitHubClient` and `GitHubResponseParser` are stateless services invoked once per request, and `RepositoryJsonCodec` is a stateless pair of read/write operations. The only retained state is the configuration each source is constructed with (`CollectionOptions` or an input path) and the collaborators it was given. The production composition root in `main()` constructs `GitHubClient`, `GitHubResponseParser`, and `RepositoryJsonCodec` before `CrawlerApplication`; the source factory captures references to those objects, so they outlive every temporary source returned by the factory. Application-level tests replace the complete source through `IRepositorySource`, while focused component tests exercise request construction and response parsing with controlled values and saved fixtures. This keeps lifetimes explicit without claiming that concrete collaborators can be replaced polymorphically.
 
 | Requirement | Acquisition design support |
 | --- | --- |
@@ -166,7 +182,7 @@ sequenceDiagram
     end
 ```
 
-The interaction has exactly one acquisition step: `GitHubRepositorySource` is the only collaborator that talks to `GitHubClient` and `GitHubResponseParser`, and `CrawlerApplication` never calls either of those directly. This keeps the failure path simple -- if `GitHubClient` reports a connection problem or `GitHubResponseParser` encounters an unexpected response shape, that error reaches `CrawlerApplication` through the same `load()` call used for success, and the application reports it and skips both `RepositoryReporter` and `JsonRepositoryExporter` rather than printing or saving anything. Only a successful `load()` reaches the output stage, and -- matching R9 -- both `RepositoryReporter` and `JsonRepositoryExporter` are handed the exact same vector that `load()` returned, with nothing re-fetched or re-parsed between the print and the export.
+The interaction has exactly one acquisition step: `GitHubRepositorySource` is the only collaborator that talks to `GitHubClient` and `GitHubResponseParser`, and `CrawlerApplication` never calls either of those directly. This keeps the failure path simple -- if `GitHubClient` reports a connection problem or `GitHubResponseParser` encounters an unexpected response shape, that error reaches `CrawlerApplication` through the same `load()` call used for success, and the application reports it and skips both `RepositoryReporter` and `JsonRepositoryExporter` rather than printing or saving anything. Only a successful `load()` reaches the output stage, and -- matching R4 -- both `RepositoryReporter` and `JsonRepositoryExporter` are handed the exact same vector that `load()` returned, with nothing re-fetched or re-parsed between the print and the export.
 
 ### 2.4 Analysis Architecture
 
@@ -270,7 +286,12 @@ classDiagram
         +load() vector~Repository~
     }
     class GitHubClient {
+        +build_request(options, token) GitHubRequest
         +search(options) string
+    }
+    class GitHubRequest {
+        +string target
+        +map headers
     }
     class GitHubResponseParser {
         +parse(response) vector~Repository~
@@ -326,9 +347,9 @@ classDiagram
         -unique_ptr~IRepositoryExporter~ exporter
         -RepositorySourceFactory make_source
         +run(arguments) int
-        -run_collection(options) int
-        -run_analysis(options) int
-        -select_strategy(sort_key) SortStrategy
+        -run_collection(options, source) int
+        -run_analysis(options, source) int
+        -select_strategy(sort_key) SortStrategy&
     }
 
     CrawlerApplication *-- CommandLineParser
@@ -347,6 +368,7 @@ classDiagram
     JsonRepositoryExporter o-- RepositoryJsonCodec
 
     GitHubResponseParser ..> Repository : creates
+    GitHubClient ..> GitHubRequest : creates
     RepositoryJsonCodec ..> Repository : reads and writes
     RepositoryAnalyzer ..> Repository
     RepositoryAnalyzer ..> AnalysisOptions
@@ -363,7 +385,7 @@ classDiagram
 
 `GitHubRepositorySource` aggregates `GitHubClient` and `GitHubResponseParser`: it delegates communication and GitHub-specific JSON conversion rather than implementing either responsibility. It contains a `CollectionOptions` value for the request being performed. `JsonRepositorySource` and `JsonRepositoryExporter` aggregate `RepositoryJsonCodec`, allowing both directions of the normalized dataset schema to remain in one component. These collaborators can be injected, reused, or replaced by test doubles without changing the source or exporter contracts.
 
-Dashed dependencies indicate method-level use rather than ownership. `RepositoryAnalyzer` reads `AnalysisOptions`, copies `Repository` values, and calls a `SortStrategy`. Parsers and codecs create or serialize `Repository` values but do not own repositories after returning. `RepositoryReporter` and `IRepositoryExporter` receive selected values by const reference and cannot change the selection. The options and repository objects are value types, so their lifetimes are controlled by the workflow that created them.
+Dashed dependencies indicate method-level use rather than ownership. `GitHubClient` creates a short-lived `GitHubRequest` value for each search; neither object owns the other. `RepositoryAnalyzer` reads `AnalysisOptions`, copies `Repository` values, and calls a `SortStrategy`. Parsers and codecs create or serialize `Repository` values but do not own repositories after returning. `RepositoryReporter` and `IRepositoryExporter` receive selected values by const reference and cannot change the selection. The options, request, and repository objects are value types, so their lifetimes are controlled by the workflow that created them.
 
 Sources and exporters are interfaces because the system already has multiple acquisition mechanisms and because external I/O benefits from substitution in tests. Sorting is an interface because its algorithm varies by user selection. `RepositoryReporter` remains concrete because the required terminal representation has one stable behavior and no current runtime variation; introducing an interface for a single nonvarying format would add indirection without solving a design problem. This balance applies abstraction at actual variation points rather than creating interfaces for every class.
 
@@ -408,16 +430,16 @@ The source completes loading before analysis begins. If loading throws a missing
 
 **Important state.** `CrawlerApplication` composes the services shown in Figure 1: `CommandLineParser`, `RepositoryAnalyzer`, `RepositoryReporter`, and one `IRepositoryExporter` implementation owned through `std::unique_ptr`. It also holds a source factory, `make_source`, which builds the `IRepositorySource` for the current command, and a reference to the error stream used for failure messages. The application holds no repositories between runs. The loaded and selected vectors are local values inside a workflow method, so each `run()` call is independent.
 
-**Mode selection.** `CommandLineParser::parse()` returns a `ParsedCommand`, which holds either a `CollectionOptions` or an `AnalysisOptions` value, plus a help flag. `run()` calls the parser once. If the command requests help, `run()` prints the usage text and returns `0`. Otherwise it dispatches on the alternative held by the command, so collection and analysis enter separate private workflows through the same controller:
+**Mode selection.** `CommandLineParser::parse()` returns a `ParsedCommand`, which holds either a `CollectionOptions` or an `AnalysisOptions` value, plus a help flag. It selects analysis only for an initial `analyze` token; every other valid invocation is parsed as collection with zero or one search-query argument. `run()` calls the parser once. If the command requests help, `run()` prints the usage text and returns `0`. Otherwise it asks `make_source` for the source corresponding to the parsed command and dispatches on the alternative, passing that source into one of two private workflows:
 
-- `run_collection(options)` builds a `GitHubRepositorySource` through `make_source`, calls `load()`, passes the result to `RepositoryReporter::print_rows()`, and saves the same vector to `repositories.json` through the exporter.
-- `run_analysis(options)` builds a `JsonRepositorySource`, calls `load()`, selects a `SortStrategy` from `options.sort_key`, calls `RepositoryAnalyzer::analyze()`, and passes the selected vector to both `RepositoryReporter` and the exporter.
+- `run_collection(options, source)` calls `load()` on the `GitHubRepositorySource` supplied by the factory, passes the result to `RepositoryReporter::print_rows()`, and saves the same vector to `repositories.json` through the exporter.
+- `run_analysis(options, source)` calls `load()` on the supplied `JsonRepositorySource`, selects a `SortStrategy` from `options.sort_key`, calls `RepositoryAnalyzer::analyze()`, and passes the selected vector to both `RepositoryReporter` and the exporter.
 
 Neither workflow can reach the other's acquisition path. Collection never runs the analyzer, and analysis never constructs a GitHub source.
 
-**Error handling.** Parser, source, codec, and exporter failures are reported by throwing an exception derived from `std::runtime_error`, carrying a message that names the problem, such as the path, the HTTP status, or the invalid option. `run()` is the single place where those exceptions are caught. It writes the message to the error stream and returns `1`. Because the source must return before any output begins, a failed load never prints or saves anything. An export failure can only occur after the rows have been printed, but the success message (`Exported N repositories to <path>`) is printed only after `save()` returns, so a failed export is never presented as successful (R10).
+**Error handling.** `CommandLineParser` reports malformed arguments with `std::invalid_argument`; sources, codecs, and exporters report operational failures with `std::runtime_error`. Each exception carries a message that names the problem, such as the invalid option, path, or HTTP status. `run()` is the single place where these `std::exception` failures are caught. It writes the message to the error stream and returns `1`. Because the source must return before any output begins, a failed load never prints or saves anything. An export failure can only occur after the rows have been printed, but the success message (`Exported N repositories to <path>`) is printed only after `save()` returns, so a failed export is never presented as successful (R10).
 
-**Dependency injection for testability.** The constructor receives the exporter and the source factory instead of creating them internally. Production code passes a factory that builds `GitHubRepositorySource` or `JsonRepositorySource` with real `GitHubClient`, `GitHubResponseParser`, and `RepositoryJsonCodec` collaborators, along with a `JsonRepositoryExporter`. A test passes a factory that returns a fake source with fixed repositories or a scripted failure, and an exporter that records what it received in memory. This means the full application workflow can be tested without network access or writable directories. The reporter and the application both write to injected `std::ostream` references (`std::cout` and `std::cerr` in production), so tests can capture output in a `std::ostringstream`.
+**Dependency injection for testability.** The constructor receives the exporter and the source factory instead of creating them internally. In production, `main()` owns the concrete client, parsers, and codec, then passes a factory that captures them by reference and builds either `GitHubRepositorySource` or `JsonRepositorySource`; their declared construction order keeps every captured reference valid until the application finishes. A test passes a factory that returns a fake `IRepositorySource` with fixed repositories or a scripted failure, and an exporter that records what it received in memory. This means the full application workflow can be tested without network access or writable directories. The reporter and the application both write to injected `std::ostream` references (`std::cout` and `std::cerr` in production), so tests can capture output in a `std::ostringstream`.
 
 **Output design.** `RepositoryReporter` is a concrete class, as explained in Section 2.5. Its only state is the output stream reference. `print_summary()` prints the input path, active filters, sort key, top N, and loaded/selected counts. `print_rows()` prints one numbered row per repository in vector order, showing each `Repository` field and printing an empty description or language as an empty value, not as missing. `IRepositoryExporter` is the abstract output contract, and `JsonRepositoryExporter` implements it by delegating to `RepositoryJsonCodec::write()`. It writes to a temporary file next to the destination and renames it into place only after the write succeeds, so a failure does not leave a partially written `selected.json` or `repositories.json` presented as a valid result. If the file cannot be opened, written, or renamed, `save()` throws an error naming the path.
 
@@ -432,29 +454,6 @@ struct ParsedCommand {
 using RepositorySourceFactory =
     std::function<std::unique_ptr<IRepositorySource>(const ParsedCommand&)>;
 
-class CrawlerApplication {
-public:
-    CrawlerApplication(
-        RepositorySourceFactory make_source,
-        std::unique_ptr<IRepositoryExporter> exporter,
-        std::ostream& out,
-        std::ostream& err);
-
-    int run(const std::vector<std::string_view>& arguments);
-
-private:
-    int run_collection(const CollectionOptions& options);
-    int run_analysis(const AnalysisOptions& options);
-    const SortStrategy& select_strategy(const std::string& sort_key) const;
-
-    CommandLineParser command_line_parser_;
-    RepositoryAnalyzer analyzer_;
-    RepositoryReporter reporter_;
-    std::unique_ptr<IRepositoryExporter> exporter_;
-    RepositorySourceFactory make_source_;
-    std::ostream& err_;
-};
-
 class RepositoryReporter {
 public:
     explicit RepositoryReporter(std::ostream& out);
@@ -467,6 +466,33 @@ public:
 
 private:
     std::ostream& out_;
+};
+
+class CrawlerApplication {
+public:
+    CrawlerApplication(
+        RepositorySourceFactory make_source,
+        std::unique_ptr<IRepositoryExporter> exporter,
+        std::ostream& out,
+        std::ostream& err);
+
+    int run(const std::vector<std::string_view>& arguments);
+
+private:
+    int run_collection(
+        const CollectionOptions& options,
+        IRepositorySource& source);
+    int run_analysis(
+        const AnalysisOptions& options,
+        IRepositorySource& source);
+    const SortStrategy& select_strategy(const std::string& sort_key) const;
+
+    CommandLineParser command_line_parser_;
+    RepositoryAnalyzer analyzer_;
+    RepositoryReporter reporter_;
+    std::unique_ptr<IRepositoryExporter> exporter_;
+    RepositorySourceFactory make_source_;
+    std::ostream& err_;
 };
 
 class JsonRepositoryExporter final : public IRepositoryExporter {
@@ -500,7 +526,7 @@ sequenceDiagram
 
     User->>App: run(arguments)
     App->>CLI: parse(arguments)
-    alt invalid option or mode
+    alt invalid arguments or analysis option
         CLI-->>App: throws parse error
         App-->>User: error message, exit 1
     else collection command
@@ -534,7 +560,7 @@ sequenceDiagram
 
 ## 3. Test Design
 
-These are planned tests for the proposed design. They will be implemented and executed in the final milestone, and this report does not claim any results for them. Every test is deterministic. None contacts the live GitHub API: collection behavior is tested with a fake `IRepositorySource`, a fake `GitHubClient` response, or a saved response fixture. Output files are written only inside a temporary directory created and removed by each test.
+These are planned tests for the proposed design. They will be implemented and executed in the final milestone, and this report does not claim any results for them. Every test is deterministic. None contacts the live GitHub API: application-level collection behavior uses a fake `IRepositorySource`, while GitHub request construction and response parsing are tested separately with controlled values and saved fixtures. Output files are written only inside a temporary directory created and removed by each test.
 
 Shared fixtures used below:
 
@@ -546,11 +572,11 @@ Shared fixtures used below:
 | Test | Target | Input / setup | Expected result |
 | --- | --- | --- | --- |
 | T1 | R1, `CommandLineParser` (normal) | (a) No arguments. (b) `'language:C++ stars:>500'`. (c) `analyze`. (d) `analyze --input data.json --min-stars 5000 --language C++ --sort forks --top 5 --output out.json`. (e) `--help` and `analyze --help`. | (a) `CollectionOptions{query="stars:>1000", count=100}`. (b) The same count with the given query. (c) `AnalysisOptions` defaults: input `repositories.json`, min stars `0`, empty language, sort `stars`, top `10`, output `selected.json`. (d) Every field equals the supplied value. (e) `show_help` is true and `run()` returns `0` without loading data. |
-| T2 | R1, R8, R10, `CommandLineParser` (error) | (a) `analyze --bogus`. (b) `analyze --top` with no value. (c) `--min-stars abc` and `--min-stars -1`. (d) `--top 0`. (e) `--sort name`. (f) A repeated option. (g) An unrecognized mode word such as `analyse`. | Each input throws a parse error whose message names the offending option or value. `run()` writes that message to the error stream, returns `1`, and the fake source's `load()` count stays `0`. |
-| T3 | R2, R4, collection workflow | `CrawlerApplication` with a fake source returning three known repositories and a recording exporter. Run with no arguments. | `run()` returns `0`. The captured output contains three rows in source order. The recording exporter received exactly the same three repositories, in the same order, with path `repositories.json`. No network access occurs. |
+| T2 | R1, R8, R10, `CommandLineParser` (error) | (a) `analyze --bogus`. (b) `analyze --top` with no value. (c) `--min-stars abc` and `--min-stars -1`. (d) `--top 0`. (e) `--sort name`. (f) A repeated analysis option. (g) Two separate collection-query arguments. | Each input throws a parse error whose message names the offending option, value, or argument count. `run()` writes that message to the error stream, returns `1`, and the fake source's `load()` count stays `0`. A single word such as `analyse` remains a valid collection query rather than being misclassified as a mode. |
+| T3 | R4, collection workflow | `CrawlerApplication` with a fake source returning three known repositories and a recording exporter. Run with no arguments. | `run()` returns `0`. The captured output contains three rows in source order. The recording exporter received exactly the same three repositories, in the same order, with path `repositories.json`. No network access occurs. |
 | T4 | R2, R10, collection failure | (a) A fake source throws `"GitHub request failed: connection refused"`. (b) A fake source throws `"GitHub API returned 401: Bad credentials"`. | `run()` returns `1`. The error stream contains the given message, including the status and body for (b). No rows are printed, the recording exporter's `save()` is never called, and no success message appears. |
 | T5 | R3, `GitHubResponseParser` | A saved GitHub search response with two items: one complete item, and one with `"description": null` and `"language": null`. Also a response missing the `items` array. | The first item maps `owner.login`, `name`, `description`, `stargazers_count`, `forks_count`, `language`, `size`, `updated_at`, and `html_url` into the nine `Repository` fields. The second has empty `description` and `language` strings and keeps its other values. The response without `items` throws a parse error. |
-| T6 | R2, `GitHubClient` request setup | Build the request headers with `GITHUB_TOKEN` set to a placeholder value, then with it unset. The headers are checked without sending the request. | With the token, the headers include `Authorization: Bearer <placeholder>`. Without it, no `Authorization` header is present and the other required headers (`Accept`, `User-Agent`) are unchanged. |
+| T6 | R2, `GitHubClient` request construction | Build a request for query `language:C++ stars:>500` and count `25`, first with `GITHUB_TOKEN` set to a placeholder value and then with it unset. Inspect the request target and headers without sending it. | The target contains the encoded query and `per_page=25`. With the token, headers include `Authorization: Bearer <placeholder>`; without it, no `Authorization` header is present. Required `Accept` and `User-Agent` headers are unchanged. |
 | T7 | R3, R5, `JsonRepositorySource` (normal) | `tests/fixtures/repositories.json`, including an entry with empty description and language. | `load()` returns the fixture's repositories in file order, with every field equal to the fixture value and empty strings preserved as empty. |
 | T8 | R5, R10, `JsonRepositorySource` (error) | (a) A path that does not exist. (b) `malformed.json`. (c) `non_array.json`. (d) `missing_field.json`. (e) `wrong_type.json` (for example `stars` as a string). | Each `load()` throws an error message that includes the path and says what was wrong (file not found, invalid JSON, top level is not an array, missing field name, wrong field type). Through `run()`, each case returns `1`, the analyzer is not called, and the exporter's `save()` is never called. |
 | T9 | R6, `RepositoryAnalyzer` filtering | Sample set S with top N larger than the set. (a) `min_stars=5000`, no language. (b) `language="C++"`, `min_stars=0`. (c) Both filters. (d) `language="c++"`. (e) `min_stars=1000000`. | (a) The 5,000-star repositories are kept (inclusive boundary) and the 4,999-star one is excluded. (b) Only exact `C++` matches are kept. (c) Only repositories that pass both filters, which is the two 5,000-star C++ repositories. (d) No matches, because matching is exact. (e) An empty vector, with no error. |
@@ -559,13 +585,13 @@ Shared fixtures used below:
 | T12 | R9, reporter/exporter consistency | Run the analysis workflow with a fake source returning S, options that select 3 repositories, a captured output stream, and a recording exporter. Also write the exported JSON to a temporary file and parse it back. | The order of the printed rows, the order of the recording exporter's vector, and the order of the parsed JSON array are all identical (same owner/name, same position, same count of 3). Every JSON object contains all nine fields with values equal to the printed row. |
 | T13 | R9, empty selection | Analysis where no repository passes the filters (T9e settings) and the real `JsonRepositoryExporter` writes to a temporary directory. | `run()` returns `0`. The summary reports `0` selected repositories and no rows are printed. The output file contains exactly `[]` and parses as an empty JSON array. |
 | T14 | R9, R10, output-file failure | (a) The recording exporter is set to throw on `save()`. (b) The real `JsonRepositoryExporter` writes to a path whose parent directory does not exist, and to a path in a read-only directory. (c) An existing `selected.json` is present before the failure in (b). | `run()` returns `1`, and the error stream names the output path. The `Exported N repositories` success message is not printed. No partial file is left at the destination, and in (c) the existing file is unchanged. |
-| T15 | R1-R4, R10, end-to-end collection | The production `CrawlerApplication` wiring, with `GitHubClient` replaced by a fake that returns a saved search-response fixture of 100 items, and the working directory set to a temporary directory. | Exit status `0`. 100 rows are printed. `repositories.json` exists, parses as an array of 100 objects with all nine fields, and matches the printed rows in order. A second run with the fake set to fail returns `1` and leaves the first `repositories.json` byte-for-byte unchanged. |
+| T15 | R1, R4, R10, collection workflow integration | `CrawlerApplication` with a fake `IRepositorySource` returning 100 normalized repositories derived from a saved fixture, the real `RepositoryReporter` and `JsonRepositoryExporter`, and a temporary working directory. | Exit status `0`. 100 rows are printed. `repositories.json` exists, parses as an array of 100 objects with all nine fields, and matches the printed rows in order. A second run with the source scripted to fail returns `1` and leaves the first `repositories.json` byte-for-byte unchanged. |
 | T16 | R1, R5-R10, end-to-end analysis | The production wiring with the real `JsonRepositorySource` and `JsonRepositoryExporter`, using a temporary copy of `tests/fixtures/repositories.json`, run as `analyze --input <copy> --min-stars 5000 --language C++ --sort forks --top 5 --output <tmp>/selected.json`. | Exit status `0`. The summary shows the loaded and selected counts. The printed rows and `selected.json` contain the same repositories in the same forks-descending order, with owner/name tie-breakers, limited to at most 5. Running the same command twice produces byte-identical output files. |
 | T17 | R1, R10, end-to-end failure | Production wiring run with (a) `analyze --input <missing path>` and (b) an unknown option, in a temporary directory with no existing output. | Both return `1` with a clear message on the error stream and nothing on the success path. No `selected.json` or `repositories.json` is created. |
 
 ### 3.1 Coverage and Evaluation Plan
 
-The plan uses three levels. **Component tests** (T1, T2, T5-T11) exercise a single class through its public interface: `CommandLineParser`, `GitHubResponseParser`, the `GitHubClient` header setup, `JsonRepositorySource`, `RepositoryAnalyzer`, and the three sort strategies. Each one is checked with small, controlled inputs where the correct answer is known in advance. **Workflow tests** (T3, T4, T12-T14) exercise `CrawlerApplication` with injected fakes, checking the coordination rules from Section 2.7: mode dispatch, the order of the steps, the single selected vector passed to both outputs, and errors converted into exit status `1` without a false success. **End-to-end tests** (T15-T17) run the production wiring against fixture files in a temporary directory, so they check that the real classes fit together and that the files on disk have the expected contents.
+The plan uses three levels. **Component tests** (T1, T2, T5-T11) exercise a single class through its public interface: `CommandLineParser`, `GitHubResponseParser`, `GitHubClient` request construction, `JsonRepositorySource`, `RepositoryAnalyzer`, and the three sort strategies. Each one is checked with small, controlled inputs where the correct answer is known in advance. **Workflow tests** (T3, T4, T12-T15) exercise `CrawlerApplication` with injected fakes plus real output components where appropriate, checking the coordination rules from Section 2.7: mode dispatch, the order of the steps, the single selected vector passed to both outputs, and errors converted into exit status `1` without a false success. **End-to-end analysis and failure tests** (T16-T17) run the production file-based wiring in a temporary directory, so they check that the real analysis classes fit together and that files on disk have the expected contents.
 
 Fakes replace live GitHub for three reasons. First, live results change daily (star counts, update times, rankings), so an exact expected result could not be written. Second, failures such as `401 Bad credentials`, rate limiting, or a refused connection cannot be produced on demand against the real service. Third, tests must pass without network access or a personal token. The `IRepositorySource` and `IRepositoryExporter` interfaces and the injected source factory exist partly to make these tests possible. Real GitHub access will be checked only as an optional manual run that is reported separately from the automated suite.
 
@@ -574,8 +600,8 @@ Each requirement maps to at least one normal case and, where it has failure beha
 | Requirement | Planned tests |
 | --- | --- |
 | R1 | T1, T2, T15, T16, T17 |
-| R2 | T3, T4, T6, T15 |
-| R3 | T5, T7, T15 |
+| R2 | T4, T6 |
+| R3 | T5, T7 |
 | R4 | T3, T15 |
 | R5 | T7, T8, T16 |
 | R6 | T9, T16 |
@@ -597,22 +623,27 @@ The analysis workflow is stable--Filter, Sort, then Top N--but the sorting algor
 The proposed design applies the Strategy pattern to this variation point. `SortStrategy` defines the sorting contract, and `StarsSortStrategy`, `ForksSortStrategy`, and `UpdatedSortStrategy` encapsulate the concrete algorithms. `RepositoryAnalyzer` is the context: it receives a strategy through `analyze()` and delegates only the ordering step. `CrawlerApplication` is responsible for selecting the concrete strategy from the already validated `sort_key`.
 
 ```cpp
-std::unique_ptr<SortStrategy> make_sort_strategy(std::string_view sort_key)
+const SortStrategy& CrawlerApplication::select_strategy(
+    const std::string& sort_key) const
 {
+    static const StarsSortStrategy by_stars;
+    static const ForksSortStrategy by_forks;
+    static const UpdatedSortStrategy by_updated;
+
     if (sort_key == "stars") {
-        return std::make_unique<StarsSortStrategy>();
+        return by_stars;
     }
     if (sort_key == "forks") {
-        return std::make_unique<ForksSortStrategy>();
+        return by_forks;
     }
     if (sort_key == "updated") {
-        return std::make_unique<UpdatedSortStrategy>();
+        return by_updated;
     }
     throw std::invalid_argument("unsupported sort key");
 }
 ```
 
-The selection helper is shown to clarify object creation; the design-pattern benefit comes from polymorphic use after selection. Once created, the analyzer communicates only through `SortStrategy::sort()` and does not inspect the key or concrete type.
+The selection helper uses one reusable instance of each stateless strategy, matching the `const SortStrategy&` interface used throughout the class declarations and interaction design. After selection, the analyzer communicates only through `SortStrategy::sort()` and does not inspect the key or concrete type.
 
 ### Collaboration
 
