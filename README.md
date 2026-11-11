@@ -14,12 +14,12 @@ GitHub Project Crawler: a C++ command-line application for exploring and collect
 
 ## Build Instructions
 
-This project uses C++20, Clang/Clang++, CMake, Git, SSL-enabled `cpp-httplib`, and `nlohmann/json`. CMake downloads the required `nlohmann/json` version during configuration.
+This project uses C++20, Clang/Clang++, CMake, Git, OpenSSL, SSL-enabled `cpp-httplib`, and `nlohmann/json`. CMake downloads the pinned `cpp-httplib` and `nlohmann/json` versions during configuration.
 
 On macOS with Homebrew, install the required tools and libraries with:
 
 ```bash
-brew install cmake cpp-httplib
+brew install cmake openssl
 ```
 
 From the root of the repository, run:
@@ -186,4 +186,4 @@ if nothing matches, the output file contains "[]"
 
 ## Clean Checkout Notes
 
-A clean checkout should build successfully after Clang/Clang++, CMake, and `cpp-httplib` are installed and available to CMake. Network access is required the first time CMake downloads `nlohmann/json`.
+A clean checkout should build successfully after Clang/Clang++, CMake, and OpenSSL are installed and available to CMake. Network access is required the first time CMake downloads the pinned `cpp-httplib` and `nlohmann/json` dependencies.

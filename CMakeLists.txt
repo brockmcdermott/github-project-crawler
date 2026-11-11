@@ -24,10 +24,10 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(nlohmann_json)
 
 FetchContent_Declare(
-	httplib
-	GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-    	GIT_TAG v0.41.0
-    	GIT_SHALLOW TRUE
+    httplib
+    GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+    GIT_TAG v0.66.0
+    GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(httplib)
 
